@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, 
 
 from app.models.enums import (
     CommodityCategory,
+    DataClass,
+    DataOrigin,
     MovementType,
     QuantityUnit,
     RecordStatus,
@@ -231,6 +233,8 @@ class WarehouseOut(ORM):
     utilization_pct: float = 0.0
     storage_type: StorageType
     status: WarehouseStatus
+    data_origin: DataOrigin = DataOrigin.MANUAL_ENTRY
+    data_class: DataClass = DataClass.REAL_ORGANIZATION
     created_at: datetime
     updated_at: datetime
 
@@ -268,6 +272,8 @@ class InventoryOut(ORM):
     unit: QuantityUnit
     quantity_tonnes: float
     notes: str
+    data_origin: DataOrigin
+    data_class: DataClass
     created_at: datetime
     updated_at: datetime
 
@@ -280,6 +286,8 @@ class MovementOut(ORM):
     quantity_delta: float
     quantity_after: float
     reason: str
+    data_origin: DataOrigin
+    data_class: DataClass
     created_at: datetime
 
 

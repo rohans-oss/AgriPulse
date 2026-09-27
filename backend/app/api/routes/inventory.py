@@ -10,7 +10,7 @@ from app.api.deps import AuthContext, require
 from app.api.routes.warehouses import get_accessible_warehouse
 from app.core.database import get_db
 from app.models import Commodity, InventoryItem, InventoryMovement, Warehouse
-from app.models.enums import MovementType, RecordStatus, WarehouseStatus
+from app.models.enums import DataOrigin, MovementType, RecordStatus, WarehouseStatus
 from app.schemas import InventoryCreate, InventoryOut, InventoryUpdate, MovementOut
 from app.services.audit import record_audit
 from app.services.rbac import P
@@ -47,6 +47,7 @@ def _movement(item: InventoryItem, kind: MovementType, delta: Decimal, reason: s
         quantity_after=item.quantity if kind != MovementType.REMOVAL else Decimal(0),
         reason=reason,
         created_by_id=ctx.user.id,
+        data_origin=DataOrigin.MANUAL_ENTRY,
     )
 
 
@@ -124,7 +125,8 @@ def create_inventory(body: InventoryCreate, request: Request,
     _check_capacity(db, ctx, warehouse, to_tonnes(body.quantity, commodity.unit))
 
     item = InventoryItem(organization_id=ctx.org_id, warehouse_id=warehouse.id, commodity_id=commodity.id,
-                         quantity=body.quantity, notes=body.notes, updated_by_id=ctx.user.id)
+                         quantity=body.quantity, notes=body.notes, updated_by_id=ctx.user.id,
+                         data_origin=DataOrigin.MANUAL_ENTRY)
     db.add(item)
     flush_or_conflict(db, "Inventory record already exists")
     db.add(_movement(item, MovementType.INITIAL, body.quantity, "Record created", ctx))
@@ -155,6 +157,7 @@ def update_inventory(item_id: uuid.UUID, body: InventoryUpdate, request: Request
         item.notes = body.notes
     if details:
         item.updated_by_id = ctx.user.id
+        item.data_origin = DataOrigin.MANUAL_ENTRY  # the record now reflects what a user entered
         if body.reason:
             details["reason"] = body.reason
         record_audit(db, action="inventory.update", entity_type="inventory_item", entity_id=item.id,

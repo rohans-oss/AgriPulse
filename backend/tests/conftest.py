@@ -1,6 +1,7 @@
 import os
 
 os.environ.setdefault("BCRYPT_ROUNDS", "4")  # fast hashing in tests only
+os.environ.setdefault("HTTP_BACKOFF_SECONDS", "0")  # no real sleeping between retries in tests
 
 import pytest
 from fastapi.testclient import TestClient

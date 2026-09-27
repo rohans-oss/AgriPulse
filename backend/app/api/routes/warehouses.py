@@ -8,7 +8,7 @@ from app.api.common import apply_updates, commit_or_conflict, flush_or_conflict,
 from app.api.deps import AuthContext, require
 from app.core.database import get_db
 from app.models import InventoryItem, Region, Warehouse
-from app.models.enums import StorageType, WarehouseStatus
+from app.models.enums import DataOrigin, StorageType, WarehouseStatus
 from app.schemas import WarehouseCreate, WarehouseOut, WarehouseUpdate
 from app.services.audit import record_audit
 from app.services.rbac import P
@@ -94,6 +94,7 @@ def update_warehouse(warehouse_id: uuid.UUID, body: WarehouseUpdate, request: Re
                             f"Capacity cannot be below current stock ({used:.3f} t)")
     changes = apply_updates(warehouse, updates)
     if changes:
+        warehouse.data_origin = DataOrigin.MANUAL_ENTRY
         record_audit(db, action="warehouse.update", entity_type="warehouse", entity_id=warehouse.id,
                      organization_id=ctx.org_id, actor_user_id=ctx.user.id, details=changes, request=request)
     commit_or_conflict(db, "A warehouse with this name already exists")

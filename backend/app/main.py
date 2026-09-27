@@ -24,7 +24,7 @@ def create_app(*, run_startup_sync: bool = True) -> FastAPI:
         raise RuntimeError("Set JWT_SECRET before running in production")
     app = FastAPI(
         title=f"{settings.app_name} API",
-        version="2.0.0",
+        version="3.0.0",
         lifespan=lifespan if run_startup_sync else None,
     )
     app.add_middleware(
@@ -44,7 +44,7 @@ def create_app(*, run_startup_sync: bool = True) -> FastAPI:
 
     @app.get("/api/health", tags=["system"])
     def health():
-        return {"status": "ok", "version": "2.0.0"}
+        return {"status": "ok", "version": "3.0.0"}
 
     return app
 

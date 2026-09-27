@@ -7,9 +7,11 @@ from the database rows the caller is allowed to see; nothing is hard-coded.
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select, true
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, get_auth
@@ -17,7 +19,7 @@ from app.core.database import get_db
 from app.models import Commodity, InventoryItem, InventoryMovement, Region, User, Warehouse
 from app.models.enums import MovementType, RecordStatus, RoleCode, StorageType
 from app.schemas import InventoryOut, MovementOut, OrganizationOut, WarehouseOut
-from app.schemas.data import LatestPrice, SourceStatus, WeatherNow
+from app.schemas.data import DataEnvironment, LatestPrice, SourceStatus, WeatherNow
 from app.services.data import queries as data_queries
 from app.services.rbac import P
 from app.services.serializers import inventory_out, movement_out, to_tonnes, warehouse_out, warehouse_usage
@@ -94,6 +96,9 @@ class DashboardOut(BaseModel):
     market: list[LatestPrice] | None = None
     weather: list[WeatherNow] | None = None
     data_sources: list[SourceStatus] | None = None
+    # V3 — what kind of data every section is built on (real external / organization / synthetic / unavailable)
+    environment: DataEnvironment | None = None
+    region_filter: str | None = None
 
 
 TITLES = {
@@ -110,19 +115,27 @@ TITLES = {
 class _Data:
     """Scoped data loaded once and shared by the section builders."""
 
-    def __init__(self, db: Session, ctx: AuthContext):
-        self.db, self.ctx = db, ctx
+    def __init__(self, db: Session, ctx: AuthContext, region_id: uuid.UUID | None = None):
+        self.db, self.ctx, self.region_id = db, ctx, region_id
         self.warehouses = db.scalars(
-            select(Warehouse).where(Warehouse.organization_id == ctx.org_id, ctx.warehouse_filter(Warehouse.id))
+            select(Warehouse).where(Warehouse.organization_id == ctx.org_id, ctx.warehouse_filter(Warehouse.id),
+                                    Warehouse.region_id == region_id if region_id else true())
             .order_by(Warehouse.name)
         ).unique().all()
         self.usage = warehouse_usage(db, ctx.org_id, [w.id for w in self.warehouses])
         self.items = db.scalars(
             select(InventoryItem).where(InventoryItem.organization_id == ctx.org_id,
-                                        ctx.warehouse_filter(InventoryItem.warehouse_id))
+                                        self.wfilter(InventoryItem.warehouse_id))
         ).unique().all()
-        self.regions = db.scalars(select(Region).where(Region.organization_id == ctx.org_id).order_by(Region.name)).all()
+        self.regions = db.scalars(select(Region).where(
+            Region.organization_id == ctx.org_id, Region.id == region_id if region_id else true()).order_by(Region.name)).all()
         self.commodities = db.scalars(select(Commodity).where(Commodity.organization_id == ctx.org_id)).all()
+
+    def wfilter(self, col):
+        """Location scope, narrowed further by the optional region filter."""
+        if self.region_id is None:
+            return self.ctx.warehouse_filter(col)
+        return col.in_([w.id for w in self.warehouses])
 
     # -- aggregates
     @property
@@ -171,7 +184,7 @@ class _Data:
         return self.db.scalars(
             select(InventoryMovement).where(
                 InventoryMovement.organization_id == self.ctx.org_id,
-                self.ctx.warehouse_filter(InventoryMovement.warehouse_id),
+                self.wfilter(InventoryMovement.warehouse_id),
                 InventoryMovement.created_at >= since,
             )
         ).unique().all()
@@ -209,7 +222,7 @@ class _Data:
     def recent(self, limit: int = 10) -> list[MovementOut]:
         rows = self.db.scalars(
             select(InventoryMovement).where(InventoryMovement.organization_id == self.ctx.org_id,
-                                            self.ctx.warehouse_filter(InventoryMovement.warehouse_id))
+                                            self.wfilter(InventoryMovement.warehouse_id))
             .order_by(InventoryMovement.created_at.desc()).limit(limit)
         ).unique().all()
         return [movement_out(m) for m in rows]
@@ -227,8 +240,15 @@ def _util_tone(pct: float) -> str:
 
 
 @router.get("", response_model=DashboardOut)
-def get_dashboard(ctx: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
-    d = _Data(db, ctx)
+def get_dashboard(region_id: uuid.UUID | None = None, ctx: AuthContext = Depends(get_auth),
+                  db: Session = Depends(get_db)):
+    region_name = None
+    if region_id:
+        region = db.get(Region, region_id)
+        if region is None or region.organization_id != ctx.org_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Region not found")
+        region_name = region.name
+    d = _Data(db, ctx, region_id)
     role = ctx.primary_role
     title, subtitle = TITLES.get(role, ("Dashboard", ""))
     if ctx.org_wide:
@@ -237,7 +257,10 @@ def get_dashboard(ctx: AuthContext = Depends(get_auth), db: Session = Depends(ge
         names = sorted([w.name for w in d.warehouses])
         scope_label = ", ".join(names) if 0 < len(names) <= 3 else f"{len(names)} assigned warehouses"
     out = DashboardOut(role=role, title=title, subtitle=subtitle, scope_label=scope_label,
-                       is_synthetic=ctx.organization.is_demo, generated_at=datetime.now(UTC), kpis=[])
+                       is_synthetic=ctx.organization.is_demo, generated_at=datetime.now(UTC), kpis=[],
+                       region_filter=region_name)
+    if region_name:
+        out.scope_label = f"{scope_label} · {region_name}"
     active_commodities = sum(1 for c in d.commodities if c.status == RecordStatus.ACTIVE)
     stocked_commodities = sum(1 for r in d.by_commodity() if r.quantity_tonnes > 0)
 
@@ -341,7 +364,7 @@ def get_dashboard(ctx: AuthContext = Depends(get_auth), db: Session = Depends(ge
         if ctx.has(P.WAREHOUSE_READ):
             out.warehouses = d.warehouse_rows()
 
-    _add_external(db, ctx, out, role)
+    _add_external(db, ctx, out, role, region_id)
     return out
 
 
@@ -357,13 +380,14 @@ EXTERNAL = {
 }
 
 
-def _add_external(db: Session, ctx: AuthContext, out: DashboardOut, role: str | None) -> None:
+def _add_external(db: Session, ctx: AuthContext, out: DashboardOut, role: str | None, region_id=None) -> None:
     if not ctx.has(P.DATA_READ):
         return
+    out.environment = data_queries.environment(db, ctx)
     blocks = EXTERNAL.get(role or "", set())
     if "market" in blocks:
         out.market = data_queries.latest_prices(db, ctx)
     if "weather" in blocks and ctx.has(P.WAREHOUSE_READ):
-        out.weather = data_queries.weather_now(db, ctx)
+        out.weather = data_queries.weather_now(db, ctx, region_id=region_id)
     if "sources" in blocks:
         out.data_sources = data_queries.source_statuses(db, ctx)

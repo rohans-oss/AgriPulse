@@ -3,8 +3,9 @@
 CURRENT      reading is at most 90 minutes old (weather "current conditions")
 RECENT       reading is older than 90 minutes but within 24 hours
 DAILY        daily dataset whose latest observation is today or within the last 3 days
-HISTORICAL   older data
+HISTORICAL   older data, or an uploaded (static) dataset
 UNAVAILABLE  no data
+ERROR        the source exists but its latest fetch failed; any value shown is the last verified one
 """
 
 from datetime import UTC, date, datetime, timedelta, timezone
@@ -63,3 +64,17 @@ def for_daily(obs_date: date | None, today: date | None = None) -> Freshness:
     if days <= 3:
         return Freshness(label="DAILY", tone="neutral", detail=f"Latest report {when}")
     return Freshness(label="HISTORICAL", tone="warn", detail=f"Latest report {when} — {days} days old")
+
+
+def failed(last_verified: datetime | date | None, reason: str | None = None) -> Freshness:
+    """The latest fetch failed. Values (if any) are the last verified ones and must be shown as stale."""
+    if isinstance(last_verified, datetime):
+        lv = last_verified.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
+    elif isinstance(last_verified, date):
+        lv = last_verified.strftime("%d %b %Y")
+    else:
+        lv = None
+    detail = "Latest update failed" + (f" · last verified data: {lv}" if lv else " · no verified data yet")
+    if reason:
+        detail += f" · reason: {reason}"
+    return Freshness(label="ERROR", tone="bad", detail=detail)

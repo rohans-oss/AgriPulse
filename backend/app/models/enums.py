@@ -96,5 +96,38 @@ class IssueSeverity(StrEnum):
 
 
 class WeatherKind(StrEnum):
-    CURRENT = "CURRENT"
-    DAILY = "DAILY"
+    CURRENT = "CURRENT"  # latest conditions (provider model analysis)
+    DAILY = "DAILY"  # a completed local day
+    FORECAST = "FORECAST"  # provider forecast for today (incomplete) or a future day — a model prediction
+
+
+# --------------------------------------------------------------------------- V3 provenance
+
+
+class DataOrigin(StrEnum):
+    """How an organization-owned record came to exist."""
+
+    SYNTHETIC_DEMO = "SYNTHETIC_DEMO"  # created by the demo seed script
+    MANUAL_ENTRY = "MANUAL_ENTRY"  # entered by a user in the app
+    CSV_IMPORT = "CSV_IMPORT"  # uploaded by a user
+    API = "API"  # pushed by an integration (future)
+
+
+class DataClass(StrEnum):
+    """What the UI is displaying. Every dataset the frontend shows carries one of these."""
+
+    REAL_EXTERNAL = "REAL_EXTERNAL"
+    REAL_ORGANIZATION = "REAL_ORGANIZATION"
+    SYNTHETIC_DEMO = "SYNTHETIC_DEMO"
+    MIXED = "MIXED"  # an aggregate over both synthetic and real organization records
+    MODEL_PREDICTION = "MODEL_PREDICTION"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class ValidationStatus(StrEnum):
+    ACCEPTED = "ACCEPTED"
+    ACCEPTED_WITH_WARNING = "ACCEPTED_WITH_WARNING"
+
+
+def class_for_origin(origin: "DataOrigin | str") -> DataClass:
+    return DataClass.SYNTHETIC_DEMO if str(origin) == DataOrigin.SYNTHETIC_DEMO.value else DataClass.REAL_ORGANIZATION

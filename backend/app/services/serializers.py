@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext
 from app.models import Commodity, InventoryItem, InventoryMovement, Region, User, Warehouse
-from app.models.enums import QuantityUnit
+from app.models.enums import QuantityUnit, class_for_origin
 from app.schemas import (
     CommodityRef,
     InventoryOut,
@@ -101,6 +101,8 @@ def warehouse_out(w: Warehouse, used_tonnes: float = 0.0) -> WarehouseOut:
         utilization_pct=round(used_tonnes / capacity * 100, 1) if capacity else 0.0,
         storage_type=w.storage_type,
         status=w.status,
+        data_origin=w.data_origin,
+        data_class=class_for_origin(w.data_origin),
         created_at=w.created_at,
         updated_at=w.updated_at,
     )
@@ -116,6 +118,8 @@ def inventory_out(item: InventoryItem) -> InventoryOut:
         unit=c.unit,
         quantity_tonnes=round(to_tonnes(item.quantity, c.unit), 3),
         notes=item.notes,
+        data_origin=item.data_origin,
+        data_class=class_for_origin(item.data_origin),
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -130,5 +134,7 @@ def movement_out(m: InventoryMovement) -> MovementOut:
         quantity_delta=float(m.quantity_delta),
         quantity_after=float(m.quantity_after),
         reason=m.reason,
+        data_origin=m.data_origin,
+        data_class=class_for_origin(m.data_origin),
         created_at=m.created_at,
     )

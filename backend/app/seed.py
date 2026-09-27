@@ -29,7 +29,15 @@ from app.models import (
     UserRole,
     Warehouse,
 )
-from app.models.enums import CommodityCategory, MovementType, QuantityUnit, RecordStatus, RoleCode, StorageType
+from app.models.enums import (
+    CommodityCategory,
+    DataOrigin,
+    MovementType,
+    QuantityUnit,
+    RecordStatus,
+    RoleCode,
+    StorageType,
+)
 from app.services.data.sources import sync_sources
 from app.services.rbac import get_system_role, sync_rbac
 
@@ -127,7 +135,8 @@ def seed(reset: bool = False) -> None:
         for name, region, addr, lat, lng, cap, stype in WAREHOUSES:
             warehouses[name] = Warehouse(organization_id=org.id, region_id=regions[region].id, name=name,
                                          address=addr, latitude=lat, longitude=lng,
-                                         capacity_tonnes=Decimal(cap), storage_type=stype)
+                                         capacity_tonnes=Decimal(cap), storage_type=stype,
+                                         data_origin=DataOrigin.SYNTHETIC_DEMO)
         db.add_all(warehouses.values())
         db.flush()
 
@@ -155,7 +164,7 @@ def seed(reset: bool = False) -> None:
                 if opening <= 0:
                     opening, deltas = final, []
                 item = InventoryItem(organization_id=org.id, warehouse_id=wh.id, commodity_id=com.id,
-                                     quantity=final, notes="Synthetic demo stock")
+                                     quantity=final, notes="Synthetic demo stock", data_origin=DataOrigin.SYNTHETIC_DEMO)
                 db.add(item)
                 db.flush()
                 t = now - timedelta(days=14)
@@ -163,7 +172,8 @@ def seed(reset: bool = False) -> None:
                 db.add(InventoryMovement(organization_id=org.id, inventory_item_id=item.id, warehouse_id=wh.id,
                                          commodity_id=com.id, movement_type=MovementType.INITIAL,
                                          quantity_delta=opening, quantity_after=opening,
-                                         reason="Synthetic opening stock", created_by_id=actors[1], created_at=t))
+                                         reason="Synthetic opening stock", created_by_id=actors[1], created_at=t,
+                                         data_origin=DataOrigin.SYNTHETIC_DEMO))
                 offsets = sorted(rng.uniform(0.5, 13.8) for _ in deltas)
                 for off, delta in zip(offsets, deltas, strict=True):
                     qty += delta
@@ -172,7 +182,8 @@ def seed(reset: bool = False) -> None:
                         movement_type=MovementType.INBOUND if delta > 0 else MovementType.OUTBOUND,
                         quantity_delta=delta, quantity_after=qty,
                         reason="Synthetic receipt" if delta > 0 else "Synthetic dispatch",
-                        created_by_id=rng.choice(actors), created_at=now - timedelta(days=14) + timedelta(days=off)))
+                        created_by_id=rng.choice(actors), created_at=now - timedelta(days=14) + timedelta(days=off),
+                        data_origin=DataOrigin.SYNTHETIC_DEMO))
 
         db.commit()
         print("Seeded SYNTHETIC demo organization 'AgriFlow Demo Foods'.")

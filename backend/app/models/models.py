@@ -29,6 +29,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.enums import (
     CommodityCategory,
+    DataOrigin,
+    ValidationStatus,
     DataKind,
     IssueSeverity,
     RunStatus,
@@ -244,6 +246,9 @@ class Warehouse(TimestampMixin, Base):
     status: Mapped[WarehouseStatus] = mapped_column(
         enum_col(WarehouseStatus), default=WarehouseStatus.ACTIVE, nullable=False
     )
+    data_origin: Mapped[DataOrigin] = mapped_column(
+        enum_col(DataOrigin), default=DataOrigin.MANUAL_ENTRY, server_default=DataOrigin.MANUAL_ENTRY.value, nullable=False
+    )
 
     region: Mapped[Region] = relationship(lazy="joined")
 
@@ -271,6 +276,9 @@ class InventoryItem(TimestampMixin, Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     notes: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    data_origin: Mapped[DataOrigin] = mapped_column(
+        enum_col(DataOrigin), default=DataOrigin.MANUAL_ENTRY, server_default=DataOrigin.MANUAL_ENTRY.value, nullable=False
+    )
 
     warehouse: Mapped[Warehouse] = relationship(lazy="joined")
     commodity: Mapped[Commodity] = relationship(lazy="joined")
@@ -302,6 +310,9 @@ class InventoryMovement(Base):
     reason: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    data_origin: Mapped[DataOrigin] = mapped_column(
+        enum_col(DataOrigin), default=DataOrigin.MANUAL_ENTRY, server_default=DataOrigin.MANUAL_ENTRY.value, nullable=False
+    )
 
     warehouse: Mapped[Warehouse] = relationship(lazy="joined")
     commodity: Mapped[Commodity] = relationship(lazy="joined")
@@ -373,8 +384,13 @@ class IngestionRun(Base):
     rows_updated: Mapped[int] = mapped_column(default=0, nullable=False)
     rows_unchanged: Mapped[int] = mapped_column(default=0, nullable=False)
     rows_rejected: Mapped[int] = mapped_column(default=0, nullable=False)
+    rows_duplicate: Mapped[int] = mapped_column(default=0, server_default="0", nullable=False)
     warnings: Mapped[int] = mapped_column(default=0, nullable=False)
     error_message: Mapped[str | None] = mapped_column(String(1000))
+    # TIMEOUT | NETWORK | AUTH | RATE_LIMITED | HTTP | MALFORMED | CONFIG | NO_LOCATIONS | UNEXPECTED
+    error_kind: Mapped[str | None] = mapped_column(String(32))
+    # Endpoint called, without credentials.
+    endpoint: Mapped[str | None] = mapped_column(String(500))
     file_name: Mapped[str | None] = mapped_column(String(255))
     params: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
@@ -428,6 +444,17 @@ class MarketPrice(TimestampMixin, Base):
     max_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     modal_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # --- provenance (V3)
+    unit: Mapped[str] = mapped_column(String(20), nullable=False, default="INR/quintal", server_default="INR/quintal")
+    source_record_id: Mapped[str | None] = mapped_column(String(160))
+    source_dataset: Mapped[str | None] = mapped_column(String(255))
+    source_endpoint: Mapped[str | None] = mapped_column(String(500))
+    raw_reference: Mapped[dict | None] = mapped_column(JSON)
+    validation_status: Mapped[ValidationStatus] = mapped_column(
+        enum_col(ValidationStatus), default=ValidationStatus.ACCEPTED,
+        server_default=ValidationStatus.ACCEPTED.value, nullable=False
+    )
+    validation_notes: Mapped[list | None] = mapped_column(JSON)
 
     source: Mapped[DataSource] = relationship(lazy="joined")
 
@@ -460,9 +487,47 @@ class WeatherObservation(Base):
     temp_max_c: Mapped[float | None] = mapped_column(Float)
     temp_min_c: Mapped[float | None] = mapped_column(Float)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # --- V3
+    rain_mm: Mapped[float | None] = mapped_column(Float)
+    wind_gust_kmh: Mapped[float | None] = mapped_column(Float)
+    wind_max_kmh: Mapped[float | None] = mapped_column(Float)
+    precipitation_probability: Mapped[float | None] = mapped_column(Float)
+    source_endpoint: Mapped[str | None] = mapped_column(String(500))
+    raw_reference: Mapped[dict | None] = mapped_column(JSON)
+    validation_status: Mapped[ValidationStatus] = mapped_column(
+        enum_col(ValidationStatus), default=ValidationStatus.ACCEPTED,
+        server_default=ValidationStatus.ACCEPTED.value, nullable=False
+    )
+    validation_notes: Mapped[list | None] = mapped_column(JSON)
 
     source: Mapped[DataSource] = relationship(lazy="joined")
     warehouse: Mapped[Warehouse] = relationship(lazy="joined")
+
+
+class OrganizationSourceSetting(Base):
+    """Per-organization settings for a data source (automatic refresh on/off)."""
+
+    __tablename__ = "organization_source_settings"
+    __table_args__ = (UniqueConstraint("organization_id", "source_key", name="uq_org_source_settings"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    auto_refresh: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class SchedulerState(Base):
+    """Small key/value store for the ingestion scheduler (heartbeat)."""
+
+    __tablename__ = "scheduler_state"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 __all__ = [
     "AuditLog",
@@ -470,6 +535,8 @@ __all__ = [
     "IngestionIssue",
     "IngestionRun",
     "MarketPrice",
+    "OrganizationSourceSetting",
+    "SchedulerState",
     "WeatherObservation",
     "AuthSession",
     "Commodity",

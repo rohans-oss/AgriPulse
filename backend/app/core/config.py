@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     mandi_states: list[str] = ["Karnataka"]
     open_meteo_base: str = "https://api.open-meteo.com/v1/forecast"
     http_timeout_seconds: float = 20.0
+    http_retries: int = 1
+    http_backoff_seconds: float = 2.0
+
+    # --- V3 scheduler -------------------------------------------------------
+    # Weather: Open-Meteo refreshes current conditions every 15 min; hourly polling is plenty.
+    weather_refresh_minutes: int = 60
+    # Mandi prices: the dataset is updated through the day as mandis report; fetch a few times daily (IST).
+    market_fetch_times_ist: list[str] = ["10:30", "14:30", "19:30"]
+    retry_after_failure_minutes: int = 20
     max_upload_bytes: int = 5_000_000
 
 

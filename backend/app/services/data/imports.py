@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext
 from app.models import Commodity, IngestionRun, InventoryItem, InventoryMovement, Warehouse
-from app.models.enums import IssueSeverity, MovementType, RecordStatus, RunStatus, RunTrigger, WarehouseStatus
+from app.models.enums import DataOrigin, IssueSeverity, MovementType, RecordStatus, RunStatus, RunTrigger, WarehouseStatus
 from app.schemas.data import ImportResult, IssueOut
 from app.services.audit import record_audit
 from app.services.data import market
@@ -81,19 +81,20 @@ def import_market_prices(db: Session, ctx: AuthContext, file_name: str, content:
                             f"Missing required column(s): {', '.join(missing)}. "
                             "Expected headers like State, District, Market, Commodity, Variety, Grade, "
                             "Arrival_Date, Min_Price, Max_Price, Modal_Price.")
-    accepted: list[tuple[int, dict]] = []
+    accepted: list[market.Accepted] = []
     issues: list[dict] = []
     for n, raw in enumerate(rows, start=2):  # row 1 is the header
         res = market.validate_row(raw, n, hmap)
         issues += res.issues
         if res.clean:
-            accepted.append((n, res.clean))
+            accepted.append(market.Accepted(n, res.clean, dict(raw), f"{file_name}#row{n}",
+                                            market.warnings_for(res.issues, n)))
     rejected = sum(1 for i in issues if i["severity"] == IssueSeverity.ERROR)
     warnings = sum(1 for i in issues if i["severity"] == IssueSeverity.WARNING)
     result = ImportResult(dry_run=dry_run, run_id=None, file_name=file_name, columns_detected=detected,
                           missing_columns=[], rows_total=len(rows), rows_valid=len(accepted),
                           rows_rejected=rejected, warnings=warnings, issues=_issues_out(issues),
-                          preview=[_jsonable(r) for _, r in accepted[:20]])
+                          preview=[_jsonable(a.row) for a in accepted[:20]])
     if dry_run:
         return result
     if not accepted:
@@ -102,12 +103,14 @@ def import_market_prices(db: Session, ctx: AuthContext, file_name: str, content:
     src = get_source(db, CSV_MARKET)
     run = IngestionRun(source_id=src.id, organization_id=ctx.org_id, triggered_by_id=ctx.user.id,
                        trigger=RunTrigger.UPLOAD, file_name=file_name, rows_received=len(rows),
-                       params={"columns": detected})
+                       params={"columns": detected}, endpoint="upload")
     db.add(run)
     db.flush()
     market.record_issues(db, run, issues)
-    stats = market.upsert_prices(db, run, accepted, ctx.org_id, datetime.now(UTC))
+    stats = market.upsert_prices(db, run, accepted, ctx.org_id, datetime.now(UTC),
+                                 dataset=f"Upload: {file_name}", endpoint="upload")
     run.rows_inserted, run.rows_updated, run.rows_unchanged = stats.inserted, stats.updated, stats.unchanged
+    run.rows_duplicate = stats.unchanged + stats.duplicate_in_batch
     run.rows_rejected, run.warnings = rejected, warnings + stats.warnings
     run.status = RunStatus.PARTIAL if rejected else RunStatus.SUCCESS
     run.finished_at = datetime.now(UTC)
@@ -247,7 +250,8 @@ def import_inventory(db: Session, ctx: AuthContext, file_name: str, content: byt
         item = existing.get((wid, cid))
         if item is None:
             item = InventoryItem(organization_id=ctx.org_id, warehouse_id=wid, commodity_id=cid,
-                                 quantity=p["quantity"], notes=p["notes"], updated_by_id=ctx.user.id)
+                                 quantity=p["quantity"], notes=p["notes"], updated_by_id=ctx.user.id,
+                                 data_origin=DataOrigin.CSV_IMPORT)
             db.add(item)
             db.flush()
             kind, delta = MovementType.INITIAL, p["quantity"]
@@ -261,13 +265,15 @@ def import_inventory(db: Session, ctx: AuthContext, file_name: str, content: byt
             if p["notes"]:
                 item.notes = p["notes"]
             item.updated_by_id = ctx.user.id
+            item.data_origin = DataOrigin.CSV_IMPORT
             run.rows_updated += 1
             if delta == 0:
                 continue
             kind = MovementType.INBOUND if delta > 0 else MovementType.OUTBOUND
         db.add(InventoryMovement(organization_id=ctx.org_id, inventory_item_id=item.id, warehouse_id=wid,
                                  commodity_id=cid, movement_type=kind, quantity_delta=delta,
-                                 quantity_after=p["quantity"], reason=reason, created_by_id=ctx.user.id))
+                                 quantity_after=p["quantity"], reason=reason, created_by_id=ctx.user.id,
+                                 data_origin=DataOrigin.CSV_IMPORT))
     run.status, run.finished_at = RunStatus.SUCCESS, datetime.now(UTC)
     record_audit(db, action="inventory.import", entity_type="ingestion_run", entity_id=run.id,
                  organization_id=ctx.org_id, actor_user_id=ctx.user.id, request=request,
