@@ -9,6 +9,7 @@ import {
   Button,
   CapacityBar,
   Card,
+  DataClassBadge,
   EmptyState,
   ErrorState,
   Loading,
@@ -116,6 +117,11 @@ export default function WarehousesPage() {
                     <Link href={`/warehouses/${w.id}`} className="font-medium hover:text-brand">
                       {w.name}
                     </Link>
+                    {w.data_class === "SYNTHETIC_DEMO" && (
+                      <span className="ml-1.5">
+                        <DataClassBadge value={w.data_class} label="Synthetic" />
+                      </span>
+                    )}
                     {w.address && <div className="max-w-xs truncate text-xs text-ink-3">{w.address}</div>}
                   </Td>
                   <Td>{w.region.name}</Td>

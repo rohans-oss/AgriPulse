@@ -92,6 +92,8 @@ export interface Warehouse {
   utilization_pct: number;
   storage_type: StorageType;
   status: WarehouseStatus;
+  data_origin: DataOrigin;
+  data_class: DataClass;
   created_at: string;
   updated_at: string;
 }
@@ -104,6 +106,8 @@ export interface InventoryItem {
   unit: Unit;
   quantity_tonnes: number;
   notes: string;
+  data_origin: DataOrigin;
+  data_class: DataClass;
   created_at: string;
   updated_at: string;
 }
@@ -116,6 +120,8 @@ export interface Movement {
   quantity_delta: number;
   quantity_after: number;
   reason: string;
+  data_origin: DataOrigin;
+  data_class: DataClass;
   created_at: string;
 }
 
@@ -179,12 +185,43 @@ export interface Dashboard {
   market: LatestPrice[] | null;
   weather: WeatherNow[] | null;
   data_sources: SourceStatus[] | null;
+  environment: DataEnvironment | null;
+  region_filter: string | null;
+}
+
+// --------------------------------------------------------------------------- V3 provenance
+
+export type DataOrigin = "SYNTHETIC_DEMO" | "MANUAL_ENTRY" | "CSV_IMPORT" | "API";
+export type DataClass =
+  | "REAL_EXTERNAL"
+  | "REAL_ORGANIZATION"
+  | "SYNTHETIC_DEMO"
+  | "MIXED"
+  | "MODEL_PREDICTION"
+  | "UNAVAILABLE";
+
+export interface EnvironmentItem {
+  key: string;
+  label: string;
+  data_class: DataClass;
+  status: "ok" | "warn" | "bad" | "none";
+  summary: string;
+  detail: string;
+  source: string | null;
+  as_of: string | null;
+  counts: Record<string, number> | null;
+}
+
+export interface DataEnvironment {
+  items: EnvironmentItem[];
+  last_successful_sync: string | null;
+  generated_at: string;
 }
 
 // --------------------------------------------------------------------------- V2 external data
 
 export interface Freshness {
-  label: "CURRENT" | "RECENT" | "DAILY" | "HISTORICAL" | "UNAVAILABLE";
+  label: "CURRENT" | "RECENT" | "DAILY" | "HISTORICAL" | "UNAVAILABLE" | "ERROR";
   tone: string;
   detail: string;
 }
@@ -208,8 +245,12 @@ export interface Run {
   rows_updated: number;
   rows_unchanged: number;
   rows_rejected: number;
+  rows_duplicate: number;
   warnings: number;
   error_message: string | null;
+  error_kind: string | null;
+  endpoint: string | null;
+  scope: "PUBLIC" | "ORGANIZATION";
   file_name: string | null;
   triggered_by: string | null;
   params: Record<string, unknown>;
@@ -247,6 +288,27 @@ export interface SourceStatus {
   freshness: Freshness | null;
   last_run: Run | null;
   last_success_at: string | null;
+  data_class: DataClass;
+  status: "CONNECTED" | "DEGRADED" | "FAILING" | "NOT_CONFIGURED" | "NOT_CONNECTED" | "UPLOAD_ONLY" | "DISABLED";
+  status_detail: string;
+  endpoint: string | null;
+  auth_status: "MISSING" | "REJECTED" | "CONFIGURED" | "NOT_REQUIRED";
+  enabled: boolean;
+  auto_refresh: boolean | null;
+  can_configure: boolean;
+  expected_refresh: string;
+  last_fetch_started_at: string | null;
+  last_fetch_completed_at: string | null;
+  last_failure_at: string | null;
+  last_failure_message: string | null;
+  last_failure_kind: string | null;
+  last_rows_received: number | null;
+  last_rows_accepted: number | null;
+  last_rows_rejected: number | null;
+  last_rows_duplicate: number | null;
+  next_scheduled_at: string | null;
+  scheduler_running: boolean;
+  scheduler_heartbeat_at: string | null;
 }
 
 export interface Price {
@@ -264,6 +326,28 @@ export interface Price {
   unit: string;
   source: SourceRef;
   fetched_at: string;
+  data_class: DataClass;
+  validation_status: "ACCEPTED" | "ACCEPTED_WITH_WARNING";
+  validation_notes: string | null;
+  run_id: string | null;
+}
+
+export interface PriceDetail extends Price {
+  source_record_id: string | null;
+  source_dataset: string | null;
+  source_endpoint: string | null;
+  raw_reference: Record<string, unknown> | null;
+  publisher: string;
+  run: Run | null;
+}
+
+export interface Compare {
+  commodity: string;
+  by: "market" | "district" | "state";
+  source: SourceRef | null;
+  window_days: number;
+  rows: { name: string; latest_date: string; modal: number; low: number | null; high: number | null; reports: number }[];
+  freshness: Freshness;
 }
 
 export interface LatestPrice {
@@ -278,8 +362,10 @@ export interface LatestPrice {
   previous_date: string | null;
   previous_avg_modal: number | null;
   change_pct: number | null;
+  change_abs: number | null;
   fetched_at: string | null;
   freshness: Freshness;
+  data_class: DataClass;
 }
 
 export interface Trend {
@@ -307,13 +393,45 @@ export interface WeatherNow {
     temperature_c: number | null;
     humidity_pct: number | null;
     precipitation_mm: number | null;
+    rain_mm: number | null;
     wind_kmh: number | null;
+    wind_gust_kmh: number | null;
     weather_code: number | null;
     condition: string | null;
     fetched_at: string;
+    run_id: string | null;
+    validation_status: string;
   } | null;
   freshness: Freshness;
   source: SourceRef | null;
+  data_class: DataClass;
+  stale: boolean;
+  forecast: ForecastDay[];
+  indicators: Indicator[];
+  indicators_note: string | null;
+}
+
+export interface ForecastDay {
+  date: string;
+  temp_max_c: number | null;
+  temp_min_c: number | null;
+  precipitation_mm: number | null;
+  precipitation_probability: number | null;
+  wind_max_kmh: number | null;
+  weather_code: number | null;
+  condition: string | null;
+  issued_at: string;
+}
+
+export interface Indicator {
+  key: "RAIN" | "HEAT" | "WIND" | "STORM" | "HUMIDITY";
+  level: "WATCH" | "WARNING";
+  title: string;
+  message: string;
+  basis: "OBSERVED" | "FORECAST";
+  data_class: DataClass;
+  rule: string;
+  as_of: string;
 }
 
 export interface WeatherHistory {

@@ -305,7 +305,16 @@ export function RangeChart({ rows, height = 170 }: { rows: { label: string; sub:
 // --------------------------------------------------------------------------- existing V1 charts (restyled)
 
 /** Single-series horizontal bars (magnitude). One hue; values in text ink beside each bar. */
-export function HBars({ rows, unit = "t" }: { rows: { key: string; label: string; value: number; sub?: string }[]; unit?: string }) {
+export function HBars({
+  rows,
+  unit = "t",
+  format,
+}: {
+  rows: { key: string; label: string; value: number; sub?: string }[];
+  unit?: string;
+  format?: (n: number) => string;
+}) {
+  const show = (n: number) => (format ? format(n) : `${fmt(n)} ${unit}`);
   const max = Math.max(...rows.map((r) => r.value), 0) || 1;
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -320,15 +329,13 @@ export function HBars({ rows, unit = "t" }: { rows: { key: string; label: string
             <span className="font-medium">{r.label}</span>
             {r.sub && <span className="block text-xs text-ink-3">{r.sub}</span>}
           </span>
-          <span className="h-2.5 w-full rounded-full bg-black/[0.04]" title={`${r.label}: ${fmt(r.value)} ${unit}`}>
+          <span className="h-2.5 w-full rounded-full bg-black/[0.04]" title={`${r.label}: ${show(r.value)}`}>
             <span
               className="block h-full rounded-full bg-series-1 transition-[width] duration-700 ease-out"
               style={{ width: ready ? `${Math.max((r.value / max) * 100, r.value > 0 ? 1 : 0)}%` : "0%" }}
             />
           </span>
-          <span className="tabular w-20 text-right font-medium text-ink-2">
-            {fmt(r.value)} {unit}
-          </span>
+          <span className="tabular min-w-20 text-right font-medium text-ink-2">{show(r.value)}</span>
         </li>
       ))}
     </ul>

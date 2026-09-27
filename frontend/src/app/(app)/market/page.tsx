@@ -1,14 +1,16 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Info, LineChart as LineIcon, Table2, TrendingUp } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, FileSearch, Info, LineChart as LineIcon, Table2, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { LineChart, NotEnoughData } from "@/components/charts";
-import { PriceCard } from "@/components/data";
+import { HBars, LineChart, NotEnoughData } from "@/components/charts";
+import { PriceCard, PriceDetailModal } from "@/components/data";
 import {
+  Badge,
   Button,
   Card,
+  DataClassBadge,
   EmptyState,
   ErrorState,
   FreshnessBadge,
@@ -25,7 +27,7 @@ import {
 } from "@/components/ui";
 import { qs, useApi } from "@/lib/api";
 import { ago, fmtDateOnly, fmtINR } from "@/lib/format";
-import type { LatestPrice, MarketFilters, Price, SourceStatus, Trend } from "@/lib/types";
+import type { Compare, LatestPrice, MarketFilters, Price, SourceStatus, Trend } from "@/lib/types";
 
 type PricePageT = { total: number; rows: Price[] };
 
@@ -58,7 +60,20 @@ function MarketInner() {
   );
 
   // table filters
-  const [f, setF] = useState({ commodity: params.get("commodity") ?? "", state: "", district: "", market: "", source: "", date_from: "", date_to: "" });
+  const [f, setF] = useState({
+    commodity: params.get("commodity") ?? "",
+    state: "",
+    district: "",
+    market: "",
+    source: "",
+    validation: "",
+    date_from: "",
+    date_to: "",
+  });
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [by, setBy] = useState<"market" | "district" | "state">("market");
+  const [cmpDays, setCmpDays] = useState(7);
+  const cmp = useApi<Compare>(trendCommodity ? `/market/compare${qs({ commodity: trendCommodity, by, days: String(cmpDays) })}` : null);
   const [offset, setOffset] = useState(0);
   const table = useApi<PricePageT>(`/market/prices${qs({ ...f, limit: String(PAGE), offset: String(offset) })}`);
   const setFilter = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -87,11 +102,15 @@ function MarketInner() {
           . Until then only uploaded files appear here — no prices are ever estimated or invented.
         </Notice>
       )}
-      {official?.configured && official.last_run?.status === "FAILED" && (
+      {official?.configured && official.status === "FAILING" && (
         <ErrorState
           title="Latest mandi price fetch failed"
-          message={official.last_run.error_message ?? "The external source did not respond."}
-          footnote={official.last_success_at ? `Last successful update ${ago(official.last_success_at)}. Showing the data from then.` : "No successful update yet."}
+          message={official.last_failure_message ?? "The external source did not respond."}
+          footnote={
+            official.last_success_at
+              ? `Last successful update ${ago(official.last_success_at)}. Prices below are from then and are marked “Update failed”.`
+              : "No successful update yet — no official prices are shown, and none are estimated."
+          }
         />
       )}
 
@@ -199,9 +218,71 @@ function MarketInner() {
         )}
       </Card>
 
+      {/* Comparison */}
+      <Card
+        title={trendCommodity ? `${trendCommodity}: compare the latest report` : "Compare markets"}
+        subtitle={`Latest reported modal price per ${by} within the last ${cmpDays} days of data · ₹ per quintal · nothing is interpolated`}
+        icon={BarChart3}
+        action={cmp.data && <FreshnessBadge freshness={cmp.data.freshness} />}
+        footer={cmp.data?.source ? <SourceTag source={cmp.data.source} /> : undefined}
+      >
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-lg border border-line bg-sunken p-0.5" role="group" aria-label="Compare by">
+            {(["market", "district", "state"] as const).map((b) => (
+              <button
+                key={b}
+                onClick={() => setBy(b)}
+                aria-pressed={by === b}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors ${by === b ? "bg-surface text-ink shadow-card" : "text-ink-3 hover:text-ink"}`}
+              >
+                By {b}
+              </button>
+            ))}
+          </div>
+          <div className="inline-flex rounded-lg border border-line bg-sunken p-0.5" role="group" aria-label="Window">
+            {[7, 30].map((d) => (
+              <button
+                key={d}
+                onClick={() => setCmpDays(d)}
+                aria-pressed={cmpDays === d}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${cmpDays === d ? "bg-surface text-ink shadow-card" : "text-ink-3 hover:text-ink"}`}
+              >
+                {d} days
+              </button>
+            ))}
+          </div>
+        </div>
+        {!trendCommodity ? (
+          <NotEnoughData message="No market data available" sub="Fetch official prices or upload a price file to compare markets." />
+        ) : cmp.loading && !cmp.data ? (
+          <Skeleton className="h-32" />
+        ) : cmp.error ? (
+          <ErrorState title="Unable to load comparison" message={cmp.error.message} />
+        ) : !cmp.data?.rows.length ? (
+          <NotEnoughData sub="No reports for this commodity in the chosen window." />
+        ) : cmp.data.rows.length < 2 ? (
+          <NotEnoughData
+            message={`Only one ${by} reporting`}
+            sub={`${cmp.data.rows[0].name}: ${fmtINR(cmp.data.rows[0].modal)} on ${fmtDateOnly(cmp.data.rows[0].latest_date)}. A comparison needs at least two.`}
+          />
+        ) : (
+          <HBars
+            key={`${trendCommodity}-${by}-${cmpDays}`}
+            format={(n) => fmtINR(n)}
+            rows={cmp.data.rows.slice(0, 12).map((r) => ({
+              key: r.name,
+              label: r.name,
+              sub: `${fmtDateOnly(r.latest_date)} · ${r.reports} report${r.reports === 1 ? "" : "s"}`,
+              value: r.modal,
+            }))}
+          />
+        )}
+        {cmp.data && cmp.data.rows.length > 12 && <p className="mt-3 text-xs text-ink-3">Showing the 12 highest of {cmp.data.rows.length}.</p>}
+      </Card>
+
       {/* Table */}
       <Card title="Market reports" subtitle="Every stored report, newest first" icon={Table2} flush>
-        <div className="grid gap-2 border-b border-line p-4 sm:grid-cols-3 lg:grid-cols-7">
+        <div className="grid gap-2 border-b border-line p-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
           <Select value={f.commodity} onChange={setFilter("commodity")} aria-label="Commodity">
             <option value="">All commodities</option>
             {filters.data?.commodities.map((c) => (
@@ -235,6 +316,11 @@ function MarketInner() {
                 {s.name}
               </option>
             ))}
+          </Select>
+          <Select value={f.validation} onChange={setFilter("validation")} aria-label="Validation">
+            <option value="">All validation</option>
+            <option value="ACCEPTED">Accepted</option>
+            <option value="ACCEPTED_WITH_WARNING">Accepted with warning</option>
           </Select>
           <Input type="date" value={f.date_from} onChange={setFilter("date_from")} aria-label="From date" />
           <Input type="date" value={f.date_to} onChange={setFilter("date_to")} aria-label="To date" />
@@ -271,6 +357,9 @@ function MarketInner() {
                   <Th right>Max</Th>
                   <Th right>Modal</Th>
                   <Th>Source</Th>
+                  <Th>
+                    <span className="sr-only">Provenance</span>
+                  </Th>
                 </tr>
               </thead>
               <tbody>
@@ -287,10 +376,28 @@ function MarketInner() {
                     </Td>
                     <Td right className="text-ink-2">{r.min_price !== null ? fmtINR(r.min_price) : "—"}</Td>
                     <Td right className="text-ink-2">{r.max_price !== null ? fmtINR(r.max_price) : "—"}</Td>
-                    <Td right className="font-semibold">{fmtINR(r.modal_price)}</Td>
+                    <Td right className="font-semibold">
+                      {fmtINR(r.modal_price)}
+                      {r.validation_status === "ACCEPTED_WITH_WARNING" && (
+                        <div className="mt-0.5" title={r.validation_notes ?? undefined}>
+                          <Badge tone="warn" icon={AlertTriangle}>
+                            Warning
+                          </Badge>
+                        </div>
+                      )}
+                    </Td>
                     <Td>
-                      <SourceTag source={r.source} />
-                      <div className="mt-0.5 text-[11px] text-ink-3">fetched {ago(r.fetched_at)}</div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <DataClassBadge value={r.data_class} />
+                      </div>
+                      <div className="mt-0.5 max-w-[14rem] truncate text-[11px] text-ink-3" title={r.source.name}>
+                        {r.source.name} · fetched {ago(r.fetched_at)}
+                      </div>
+                    </Td>
+                    <Td>
+                      <Button size="sm" variant="ghost" icon={FileSearch} onClick={() => setDetailId(r.id)} aria-label={`Provenance for ${r.commodity} at ${r.market}`}>
+                        Source
+                      </Button>
                     </Td>
                   </tr>
                 ))}
@@ -312,6 +419,7 @@ function MarketInner() {
           </>
         )}
       </Card>
+      <PriceDetailModal id={detailId} onClose={() => setDetailId(null)} />
     </div>
   );
 }

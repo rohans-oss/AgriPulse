@@ -2,15 +2,21 @@
 
 Agricultural supply-chain intelligence platform for India, built version by version.
 
-**Current version: V2 — Data Platform** (on top of V1 — Core Platform).
+**Current version: V3 — Real-data enforcement & first intelligence layer** (on top of V1 and V2).
 
 - **V1:** authentication, organizations, roles and permissions, location scope, regions,
   commodities, warehouses, inventory and a dashboard specific to each role.
 - **V2:** real public data (AGMARKNET mandi prices via data.gov.in, Open-Meteo weather),
   CSV import (market price history and bulk inventory) with dry-run validation, data-quality
   checks, ingestion history, honest freshness labels, and a full UI redesign.
+- **V3:** every figure carries its data class (real external / organization / synthetic demo /
+  forecast / unavailable) and provenance down to the ingestion run; source health (status, auth,
+  endpoint, rows, last failure, next fetch); an automatic ingestion scheduler; ERROR freshness
+  when a refresh fails; a *Data environment* panel on every dashboard; market comparisons by
+  market/district/state; weather forecasts (labelled as model predictions) and rule-based
+  disruption indicators; server-side filters; and a one-command Windows launcher.
 
-Forecasting, price models, spoilage risk, the knowledge graph, optimization, what-if simulation
+No AgriFlow ML model exists yet — nothing on screen is an AgriFlow prediction. Forecasting, price models, spoilage risk, the knowledge graph, optimization, what-if simulation
 and the AI assistant are later versions (V3–V9) and are **not** in this codebase yet.
 
 > **Two kinds of data, never mixed.** The demo workspace's organization figures (stock, capacity,
@@ -38,7 +44,8 @@ backend/
     services/rbac.py    permission & role catalog (single source of truth)
     services/data/      V2: source catalog, connectors, validation, freshness, imports, queries
     seed.py             synthetic demo workspace
-    ingest.py           CLI for scheduled ingestion
+    ingest.py           CLI: fetch now (weather | market | all)
+    scheduler.py        V3 automatic-refresh worker
   alembic/              migrations
   tests/                API tests
 frontend/
@@ -48,7 +55,23 @@ frontend/
   src/lib               API client, auth context, types
 ```
 
-## Run locally
+## Run on Windows (one command)
+
+```powershell
+git clone https://github.com/rohans-oss/AgriPulse.git
+cd AgriPulse
+.\run-local.bat            # or: powershell -ExecutionPolicy Bypass -File .\run-local.ps1
+```
+
+Needs Python 3.11+ and Node 20+ — no Docker or PostgreSQL. It creates `backend\.env` (SQLite,
+random JWT secret), migrates, seeds the synthetic demo workspace (`-NoDemo` to skip, `-Reset` to
+start over), builds the web app, and opens three windows: API, scheduler, web. Sign in at
+http://localhost:3000.
+
+For real mandi prices, add your free data.gov.in key to `backend\.env` yourself
+(`DATA_GOV_IN_API_KEY=...`) and re-run. The key stays server-side; the browser never receives it.
+
+## Run locally (PostgreSQL)
 
 Prerequisites: Python 3.11+, Node 20+, PostgreSQL 16 (or Docker for the database only).
 
@@ -114,12 +137,23 @@ Register a new workspace, or sign in with a demo account (password `Demo@1234`):
 4. If a commodity's AGMARKNET name differs from yours (e.g. Rice → `Paddy(Dhan)(Common)`), set
    *Name in market data* on the commodity.
 
-**Scheduling.** Run the CLI from cron / Task Scheduler, e.g. weather hourly and prices each evening:
+**Automatic refresh (V3).** Run the scheduler next to the API:
 
 ```bash
-0 * * * *   cd backend && python -m app.ingest weather --org agriflow-demo-foods
-30 19 * * * cd backend && python -m app.ingest market  --org agriflow-demo-foods
+cd backend
+python -m app.scheduler            # checks every 60 s, runs whatever is due
+python -m app.scheduler --once     # a single tick, for cron / Windows Task Scheduler
 ```
+
+What is due is computed from the ingestion history in the database, so restarts never
+double-fetch. Weather is fetched per organization every `WEATHER_REFRESH_MINUTES` (default 60;
+Open-Meteo updates current conditions every 15 min). Mandi prices are one shared public fetch at
+`MARKET_FETCH_TIMES_IST` (default 10:30, 14:30, 19:30 IST) — data.gov.in is a daily dataset, so
+polling more often only wastes the rate limit. After a failure it retries after
+`RETRY_AFTER_FAILURE_MINUTES` (default 20). Each organization can switch auto-refresh off per
+source on the Data sources page. The worker writes a heartbeat; the UI says so when it is not running.
+
+To fetch immediately from the command line: `python -m app.ingest weather|market|all [--org slug]`.
 
 **Data quality.** Every row passes the same checks whether it comes from an API or a CSV:
 required fields, parseable dates, no future dates, positive and plausible prices, min ≤ max
@@ -127,14 +161,56 @@ required fields, parseable dates, no future dates, positive and plausible prices
 plausible weather ranges. Rejected rows are never stored; every issue is visible on the run page.
 Re-fetching is idempotent (rows are de-duplicated and updated in place).
 
-**Visibility.** Official public rows are shared across organizations; uploads, weather and
-ingestion runs are private to the organization, and weather follows location scope.
+**Visibility.** Official public rows and their (public) fetch runs are shared across
+organizations — another workspace's name is never shown on them. Uploads, weather, organization
+runs and source settings are private to the organization, and weather follows location scope.
+
+## Real data rules (V3)
+
+| Data class | Meaning | Where |
+|---|---|---|
+| `REAL_EXTERNAL` | Fetched from a named public source | Mandi prices (AGMARKNET), weather (Open-Meteo) |
+| `REAL_ORGANIZATION` | Entered manually or imported by the organization | Inventory, warehouses, uploaded price files |
+| `SYNTHETIC_DEMO` | Created by the demo seed | Demo workspace inventory, warehouses, movements |
+| `MIXED` | A section containing both of the above | Demo workspace after someone edits a record |
+| `MODEL_PREDICTION` | A model output, never an observation | Only Open-Meteo's own forecast (labelled "Forecast") |
+| `UNAVAILABLE` | No verified data | Shown as "No verified … available", never filled in |
+
+Every inventory item, movement and warehouse has a `data_origin` (`SYNTHETIC_DEMO`,
+`MANUAL_ENTRY`, `CSV_IMPORT`, `API`); editing a synthetic record makes it organization data.
+
+**Freshness:** `CURRENT` (weather reading ≤ 90 min old), `RECENT` (≤ 24 h), `DAILY` (mandi report
+from today/yesterday), `HISTORICAL` (older, or an uploaded file), `UNAVAILABLE` (no verified data),
+`ERROR` (verified data exists but the latest refresh failed — the card says when the data was last
+verified and why the refresh failed). Nothing is ever labelled "live".
+
+**Provenance:** each stored price keeps `source_record_id`, `source_dataset`, `source_endpoint`
+(never the API key), `raw_reference` (the record as received), `fetched_at`, the ingestion run and
+its validation status/notes. *Market prices → Source* opens this for any row. Weather readings
+keep the same fields.
+
+**Weather indicators** are published thresholds, not ML: IMD 24-hour rainfall categories
+(moderate ≥ 15.6 mm, heavy ≥ 64.5 mm), heat ≥ 35 °C / 40 °C, gusts ≥ 40 / 60 km/h, thunderstorm
+weather codes, warm-and-humid storage conditions. Each one states its rule and whether it used an
+observation or the provider's forecast. Readings older than 6 h are not evaluated.
+
+**Source health** (Data sources page and `GET /api/data/sources`): status (`CONNECTED`,
+`DEGRADED`, `FAILING`, `NOT_CONFIGURED`, `NOT_CONNECTED`, …), auth status, endpoint, expected
+refresh, last fetch started/completed, last success, last failure with its kind (`TIMEOUT`,
+`NETWORK`, `AUTH`, `RATE_LIMITED`, `HTTP`, `MALFORMED`), rows received/accepted/unchanged/rejected,
+next scheduled fetch and scheduler heartbeat.
+
+**New endpoints:** `GET /api/data/environment`, `GET|PATCH /api/data/sources/{key}/settings`,
+`GET /api/market/prices/{id}` (provenance), `GET /api/market/compare?commodity=&by=market|district|state&days=`,
+filters `validation` and `freshness` on `/api/market/prices`, `region_id`/`warehouse_id` on
+`/api/weather/current`, `region_id` on `/api/dashboard`. The full audit of every dataset is in
+[`docs/V3_DATA_AUDIT.md`](docs/V3_DATA_AUDIT.md).
 
 ## Tests
 
 ```bash
 cd backend
-pytest                                                         # SQLite in memory (54 tests)
+pytest                                                         # SQLite in memory (74 tests)
 TEST_DATABASE_URL=postgresql+psycopg://agriflow:agriflow@localhost:5432/agriflow_test pytest
 ```
 
@@ -194,6 +270,6 @@ numbers, chart draw-in, skeletons) and is disabled under `prefers-reduced-motion
 
 ## Roadmap
 
-V1 core platform ✓ · V2 data platform ✓ · V3 demand intelligence · V4 price intelligence · V5 spoilage & risk ·
+V1 core platform ✓ · V2 data platform ✓ · V3 real-data enforcement ✓ · V4 demand & price intelligence · V5 spoilage & risk ·
 V6 knowledge graph · V7 optimization · V8 what-if simulation · V9 AI operations assistant ·
 V10 production platform.

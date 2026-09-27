@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDownRight, ArrowUpRight, History } from "lucide-react";
-import { Badge, Card, EmptyState, Table, Td, Th } from "@/components/ui";
+import { Badge, Card, DataClassBadge, EmptyState, Table, Td, Th } from "@/components/ui";
 import { fmtDate, fmtQty, title } from "@/lib/format";
 import type { Movement } from "@/lib/types";
 
@@ -26,7 +26,14 @@ export function RecentMovements({ rows, heading = "Recent inventory movements" }
               <tr key={m.id}>
                 <Td className="whitespace-nowrap text-ink-2">{fmtDate(m.created_at)}</Td>
                 <Td>{m.warehouse.name}</Td>
-                <Td className="font-medium">{m.commodity.name}</Td>
+                <Td className="font-medium">
+                  {m.commodity.name}
+                  {m.data_class === "SYNTHETIC_DEMO" && (
+                    <span className="ml-1.5">
+                      <DataClassBadge value={m.data_class} label="Synthetic" />
+                    </span>
+                  )}
+                </Td>
                 <Td>
                   <Badge tone={m.quantity_delta >= 0 ? "brand" : "neutral"} icon={m.quantity_delta >= 0 ? ArrowDownRight : ArrowUpRight}>
                     {title(m.movement_type)}

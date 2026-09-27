@@ -31,6 +31,7 @@ export default function RunPage() {
     ["New", r.rows_inserted],
     ["Updated", r.rows_updated],
     ["Unchanged", r.rows_unchanged],
+    ["Duplicates", r.rows_duplicate],
     ["Rejected", r.rows_rejected],
     ["Warnings", r.warnings],
   ];
@@ -55,11 +56,22 @@ export default function RunPage() {
           </span>
         }
       />
-      <SourceTag source={r.source} />
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-3">
+        <SourceTag source={r.source} />
+        <Badge>{r.scope === "PUBLIC" ? "Shared public fetch" : "Your organization"}</Badge>
+        {r.endpoint && (
+          <span className="min-w-0 max-w-full truncate font-mono" title={r.endpoint}>
+            {r.endpoint}
+          </span>
+        )}
+      </div>
 
-      {r.error_message && <ErrorState title="This run failed" message={r.error_message} />}
+      {r.error_message && (
+        <ErrorState title={`This run failed${r.error_kind ? ` · ${title(r.error_kind)}` : ""}`} message={r.error_message} />
+      )}
+      {typeof r.params.note === "string" && <p className="text-sm text-ink-2">{r.params.note}</p>}
 
-      <div className="stagger grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="stagger grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
         {tiles.map(([label, v], i) => (
           <StatTile
             key={label}

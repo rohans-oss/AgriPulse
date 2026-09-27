@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Boxes, PackageSearch, SlidersHorizontal, Trash2 } from "lucide-react";
-import { Button, Card, EmptyState, ErrorState, Field, FormError, Input, Loading, Modal, Table, Td, Th } from "./ui";
+import { Button, Card, DataClassBadge, EmptyState, ErrorState, Field, FormError, Input, Loading, Modal, Table, Td, Th } from "./ui";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmt, fmtDate, fmtQty, title, UNIT_SHORT } from "@/lib/format";
@@ -82,6 +82,11 @@ export function InventoryTable({
                 <Td>
                   {i.commodity.name}
                   <span className="ml-1.5 text-xs text-ink-3">{title(i.commodity.category)}</span>
+                  {i.data_class === "SYNTHETIC_DEMO" && (
+                    <span className="ml-1.5">
+                      <DataClassBadge value={i.data_class} label="Synthetic" />
+                    </span>
+                  )}
                 </Td>
                 <Td right>
                   {fmtQty(i.quantity)} <span className="text-ink-3">{UNIT_SHORT[i.unit]}</span>

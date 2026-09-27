@@ -25,24 +25,39 @@ export function fmtDay(iso: string): string {
 const INR = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 export const fmtINR = (n: number) => INR.format(n);
 
+/** Parse an API timestamp. All backend times are UTC; SQLite returns them without an offset, so add one. */
+export function toDate(iso: string): Date {
+  return new Date(/[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(iso) ? `${iso}Z` : iso);
+}
+
 /** Timestamp in IST, labelled, e.g. "27 Sept 2026, 10:30 am IST". */
 export function fmtIST(iso: string): string {
   return (
-    new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) + " IST"
+    toDate(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) + " IST"
   );
 }
 
 export function fmtTimeIST(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" }) + " IST";
+  return toDate(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" }) + " IST";
 }
 
 export function ago(iso: string | null | undefined): string {
   if (!iso) return "never";
-  const s = Math.max((Date.now() - new Date(iso).getTime()) / 1000, 0);
+  const s = Math.max((Date.now() - toDate(iso).getTime()) / 1000, 0);
   if (s < 60) return "just now";
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 172800) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)} days ago`;
+}
+
+/** "in 25 min" / "in 3h" for a future time; "due now" if it has passed. */
+export function until(iso: string | null | undefined): string {
+  if (!iso) return "not scheduled";
+  const s = (toDate(iso).getTime() - Date.now()) / 1000;
+  if (s < 60) return "due now";
+  if (s < 3600) return `in ${Math.round(s / 60)} min`;
+  if (s < 172800) return `in ${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
+  return `in ${Math.floor(s / 86400)} days`;
 }
 
 export function fmtDateOnly(d: string): string {

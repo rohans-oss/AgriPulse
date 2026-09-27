@@ -10,16 +10,17 @@ import {
   KeyRound,
   Landmark,
   RefreshCw,
+  Timer,
   UploadCloud,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
-import { RunStatusBadge } from "@/components/data";
+import { useRef, useState } from "react";
+import { RunStatusBadge, SourceStatusBadge } from "@/components/data";
 import { waitForRun } from "@/components/weather";
-import { Badge, Button, Card, EmptyState, ErrorState, FreshnessBadge, Loading, PageHeader, Skeleton, Table, Td, Th } from "@/components/ui";
-import { api, ApiError, useApi } from "@/lib/api";
-import { ago, fmtDateOnly, fmtIST, title } from "@/lib/format";
+import { Badge, Button, Card, DataClassBadge, EmptyState, ErrorState, FreshnessBadge, Loading, PageHeader, Skeleton, Table, Td, Th } from "@/components/ui";
+import { api, ApiError, qs, useApi } from "@/lib/api";
+import { ago, fmtDateOnly, fmtIST, title, until } from "@/lib/format";
 import type { Run, SourceStatus } from "@/lib/types";
 
 const ORIGIN_META: Record<SourceStatus["origin"], { label: string; icon: LucideIcon; tone: "brand" | "info" | "neutral"; blurb: string }> = {
@@ -30,7 +31,14 @@ const ORIGIN_META: Record<SourceStatus["origin"], { label: string; icon: LucideI
 
 export default function DataSourcesPage() {
   const sources = useApi<SourceStatus[]>("/data/sources");
-  const runs = useApi<Run[]>("/data/runs?limit=30");
+  const [runSource, setRunSource] = useState<string | null>(null);
+  const runs = useApi<Run[]>(`/data/runs${qs({ limit: "30", source: runSource })}`);
+  const historyRef = useRef<HTMLDivElement>(null);
+  const viewRuns = (key: string) => {
+    setRunSource(key);
+    historyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const runSourceName = sources.data?.find((s) => s.key === runSource)?.name;
   const reload = () => {
     sources.reload();
     runs.reload();
@@ -76,12 +84,25 @@ export default function DataSourcesPage() {
       ) : (
         <div className="stagger grid gap-4 lg:grid-cols-2">
           {sources.data?.map((s, i) => (
-            <SourceCard key={s.key} s={s} onChanged={reload} style={{ "--i": i } as React.CSSProperties} />
+            <SourceCard key={s.key} s={s} onChanged={reload} onViewRuns={viewRuns} style={{ "--i": i } as React.CSSProperties} />
           ))}
         </div>
       )}
 
-      <Card title="Ingestion history" subtitle="Fetches and uploads by your organization, newest first" icon={History} flush>
+      <div ref={historyRef} className="scroll-mt-20">
+      <Card
+        title="Ingestion history"
+        subtitle={runSourceName ? `${runSourceName} · newest first` : "Your organization's fetches and uploads, plus shared public fetches, newest first"}
+        icon={History}
+        flush
+        action={
+          runSource && (
+            <Button size="sm" variant="ghost" onClick={() => setRunSource(null)}>
+              Show all sources
+            </Button>
+          )
+        }
+      >
         {runs.loading && !runs.data ? (
           <div className="px-5">
             <Loading />
@@ -102,6 +123,7 @@ export default function DataSourcesPage() {
                 <Th right>Received</Th>
                 <Th right>New</Th>
                 <Th right>Updated</Th>
+                <Th right>Unchanged</Th>
                 <Th right>Rejected</Th>
                 <Th right>Warnings</Th>
                 <Th>By</Th>
@@ -122,13 +144,16 @@ export default function DataSourcesPage() {
                   <Td>
                     <div className="max-w-[16rem] truncate">{r.source.name}</div>
                     {r.file_name && <div className="max-w-[16rem] truncate text-[11px] text-ink-3">{r.file_name}</div>}
+                    {r.scope === "PUBLIC" && <div className="text-[11px] text-ink-3">Shared public fetch</div>}
                   </Td>
                   <Td>
                     <RunStatusBadge status={r.status} />
+                    {r.error_kind && <div className="mt-0.5 text-[11px] text-bad">{title(r.error_kind)}</div>}
                   </Td>
                   <Td right>{r.rows_received}</Td>
                   <Td right>{r.rows_inserted}</Td>
                   <Td right>{r.rows_updated}</Td>
+                  <Td right className="text-ink-3">{r.rows_duplicate}</Td>
                   <Td right className={r.rows_rejected ? "font-medium text-bad" : ""}>
                     {r.rows_rejected}
                   </Td>
@@ -142,17 +167,29 @@ export default function DataSourcesPage() {
           </Table>
         )}
       </Card>
+      </div>
     </div>
   );
 }
 
-function SourceCard({ s, onChanged, style }: { s: SourceStatus; onChanged: () => void; style?: React.CSSProperties }) {
+function SourceCard({
+  s,
+  onChanged,
+  onViewRuns,
+  style,
+}: {
+  s: SourceStatus;
+  onChanged: () => void;
+  onViewRuns: (key: string) => void;
+  style?: React.CSSProperties;
+}) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const meta = ORIGIN_META[s.origin];
   const upload = s.origin === "USER_UPLOAD";
-  const lastFailed = s.last_run?.status === "FAILED";
+  const fetchable = s.endpoint !== null;
 
   async function fetchNow() {
     setRunning(true);
@@ -172,28 +209,54 @@ function SourceCard({ s, onChanged, style }: { s: SourceStatus; onChanged: () =>
     }
   }
 
+  async function toggleAuto() {
+    setSaving(true);
+    setErr(null);
+    try {
+      await api(`/data/sources/${s.key}/settings`, { method: "PATCH", json: { auto_refresh: !s.auto_refresh } });
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <section className="flex flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card" style={style}>
+    <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card" style={style}>
       <div className="flex items-start gap-3 border-b border-line px-5 py-4">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
           <meta.icon className="h-5 w-5" strokeWidth={1.8} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-[15px] font-semibold tracking-tight">{s.name}</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">{s.name}</h2>
+          <p className="mt-0.5 text-xs text-ink-3">{s.publisher}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <SourceStatusBadge status={s.status} detail={s.status_detail} />
+            <DataClassBadge value={s.data_class} />
             {s.freshness && !upload && <FreshnessBadge freshness={s.freshness} />}
           </div>
-          <p className="mt-0.5 text-xs text-ink-3">{s.publisher}</p>
         </div>
       </div>
 
       <div className="flex-1 space-y-4 px-5 py-4">
         <p className="text-sm text-ink-2">{s.description}</p>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          <Meta label="Updates">{s.update_frequency}</Meta>
-          <Meta label="Licence">{s.license}</Meta>
-          <Meta label={s.kind === "INVENTORY" ? "Uploads" : s.kind === "WEATHER" ? "Readings stored" : "Records available"}>{s.record_count.toLocaleString("en-IN")}</Meta>
-          <Meta label={s.kind === "WEATHER" ? "Latest reading" : upload && s.kind === "INVENTORY" ? "Last upload" : "Latest report date"}>
+        {!upload && <p className="text-xs text-ink-3">{s.status_detail}</p>}
+        <dl className="grid grid-cols-1 gap-x-4 gap-y-3 text-sm sm:grid-cols-2">
+          {fetchable && (
+            <div className="min-w-0 sm:col-span-2">
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Endpoint</dt>
+              <dd className="mt-0.5 truncate font-mono text-xs text-ink-2" title={s.endpoint ?? undefined}>
+                {s.endpoint}
+              </dd>
+            </div>
+          )}
+          {fetchable && <Meta label="Authentication">{AUTH_TEXT[s.auth_status]}</Meta>}
+          <Meta label="Expected refresh">{s.expected_refresh || s.update_frequency}</Meta>
+          <Meta label={s.kind === "INVENTORY" ? "Uploads" : s.kind === "WEATHER" ? "Readings stored" : "Records available"}>
+            {s.record_count.toLocaleString("en-IN")}
+          </Meta>
+          <Meta label={s.kind === "WEATHER" ? "Latest reading" : s.kind === "INVENTORY" ? "Last upload" : "Latest report date"}>
             {s.kind === "INVENTORY"
               ? s.last_success_at
                 ? fmtIST(s.last_success_at)
@@ -205,8 +268,46 @@ function SourceCard({ s, onChanged, style }: { s: SourceStatus; onChanged: () =>
                 : "—"}
           </Meta>
           <Meta label="Last successful update">{s.last_success_at ? `${fmtIST(s.last_success_at)} (${ago(s.last_success_at)})` : "Never"}</Meta>
-          <Meta label="Last run">{s.last_run ? <RunStatusBadge status={s.last_run.status} /> : "—"}</Meta>
+          <Meta label="Last fetch">
+            {s.last_run ? (
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                <RunStatusBadge status={s.last_run.status} />
+                <span className="text-xs text-ink-3">{ago(s.last_fetch_started_at)}</span>
+              </span>
+            ) : (
+              "—"
+            )}
+          </Meta>
+          {s.last_rows_received !== null && (
+            <Meta label="Last successful fetch rows">
+              <span className="tabular text-xs">
+                {s.last_rows_received} received · {s.last_rows_accepted} accepted · {s.last_rows_duplicate} unchanged ·{" "}
+                <span className={s.last_rows_rejected ? "font-medium text-bad" : ""}>{s.last_rows_rejected} rejected</span>
+              </span>
+            </Meta>
+          )}
+          {fetchable && (
+            <Meta label="Next automatic fetch">
+              {!s.scheduler_running ? (
+                <span className="text-ink-3">Scheduler not running</span>
+              ) : s.next_scheduled_at ? (
+                <span title={fmtIST(s.next_scheduled_at)}>{until(s.next_scheduled_at)}</span>
+              ) : (
+                <span className="text-ink-3">{s.auto_refresh === false ? "Automatic refresh is off" : "Not scheduled"}</span>
+              )}
+            </Meta>
+          )}
         </dl>
+
+        {fetchable && !s.scheduler_running && s.configured && (
+          <p className="flex items-start gap-2 rounded-lg bg-sunken px-3 py-2 text-xs text-ink-2">
+            <Timer className="mt-px h-3.5 w-3.5 shrink-0 text-ink-3" />
+            <span>
+              Automatic refresh needs the scheduler worker (<code className="font-mono">python -m app.scheduler</code>).
+              {s.scheduler_heartbeat_at ? ` Last seen ${ago(s.scheduler_heartbeat_at)}.` : " It has not run yet."} Fetch now still works.
+            </span>
+          </p>
+        )}
 
         {!s.configured && (
           <div className="flex items-start gap-2.5 rounded-lg border border-line bg-sunken px-3 py-2.5 text-sm">
@@ -221,14 +322,17 @@ function SourceCard({ s, onChanged, style }: { s: SourceStatus; onChanged: () =>
             </div>
           </div>
         )}
-        {(err || (lastFailed && s.last_run?.error_message)) && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50/70 px-3 py-2.5 text-sm">
+        {(err || (s.status === "FAILING" && s.last_failure_message)) && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50/70 px-3 py-2.5 text-sm" role="alert">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-bad" />
-            <div>
-              <div className="font-medium text-bad">{err ? "Fetch failed" : "Last fetch failed"}</div>
-              <div className="text-ink-2">{err ?? s.last_run?.error_message}</div>
+            <div className="min-w-0">
+              <div className="font-medium text-bad">
+                {err ? "Fetch failed" : `Latest fetch failed${s.last_failure_kind ? ` · ${title(s.last_failure_kind)}` : ""}`}
+              </div>
+              <div className="break-words text-ink-2">{err ?? s.last_failure_message}</div>
               <div className="mt-0.5 text-xs text-ink-3">
-                {s.last_success_at ? `Last successful update ${fmtIST(s.last_success_at)} — that data is still shown.` : "No successful update yet."}
+                {s.last_failure_at && !err && `${fmtIST(s.last_failure_at)} · `}
+                {s.last_success_at ? `Last verified data from ${fmtIST(s.last_success_at)} is still shown, marked “Update failed”.` : "No verified data yet — nothing is shown in its place."}
               </div>
             </div>
           </div>
@@ -236,15 +340,31 @@ function SourceCard({ s, onChanged, style }: { s: SourceStatus; onChanged: () =>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-sunken px-5 py-3">
-        {s.homepage_url ? (
-          <a href={s.homepage_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-ink-2 hover:text-ink">
-            Source documentation <ExternalLink className="h-3 w-3" />
-          </a>
-        ) : (
-          <span />
-        )}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {s.homepage_url && (
+            <a href={s.homepage_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-ink-2 hover:text-ink">
+              Documentation <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+          <button onClick={() => onViewRuns(s.key)} className="inline-flex items-center gap-1 text-xs font-medium text-ink-2 hover:text-ink">
+            <History className="h-3 w-3" /> View runs
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           {progress && <span className="animate-fade-in text-xs text-ink-3">{progress}</span>}
+          {s.can_configure && s.auto_refresh !== null && (
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-ink-2">
+              <input type="checkbox" className="peer sr-only" checked={s.auto_refresh} disabled={saving} onChange={toggleAuto} />
+              <span
+                aria-hidden
+                className="relative h-4 w-7 rounded-full bg-line-strong transition-colors peer-checked:bg-brand peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 after:absolute after:left-0.5 after:top-0.5 after:h-3 after:w-3 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-3"
+              />
+              Auto-refresh
+            </label>
+          )}
+          {!s.can_configure && s.auto_refresh !== null && (
+            <span className="text-xs text-ink-3">Auto-refresh {s.auto_refresh ? "on" : "off"}</span>
+          )}
           {s.can_run && (
             <Button size="sm" icon={RefreshCw} loading={running} onClick={fetchNow}>
               {running ? "Fetching" : "Fetch now"}
@@ -263,6 +383,13 @@ function SourceCard({ s, onChanged, style }: { s: SourceStatus; onChanged: () =>
     </section>
   );
 }
+
+const AUTH_TEXT: Record<SourceStatus["auth_status"], string> = {
+  NOT_REQUIRED: "No key required",
+  CONFIGURED: "API key configured (server-side)",
+  MISSING: "API key missing",
+  REJECTED: "API key rejected by the source",
+};
 
 function Meta({ label, children }: { label: string; children: React.ReactNode }) {
   return (

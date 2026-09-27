@@ -22,3 +22,7 @@ next-env.d.ts
 .DS_Store
 .vscode/
 .idea/
+
+# Local SQLite database (run-local.ps1)
+backend/*.db
+backend/*.db-*

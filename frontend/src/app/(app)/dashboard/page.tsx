@@ -13,6 +13,7 @@ import {
   Database,
   Gauge,
   History,
+  ShieldCheck,
   LineChart as LineIcon,
   MapPin,
   PackageSearch,
@@ -25,16 +26,18 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { DailyMovementChart, HBars, LineChart, NotEnoughData } from "@/components/charts";
-import { PriceCard, SourceHealthRow, WeatherCard } from "@/components/data";
+import { EnvironmentPanel, PriceCard, SourceHealthRow, WeatherCard } from "@/components/data";
 import { RecentMovements } from "@/components/MovementsTable";
 import {
   Badge,
   CapacityBar,
   Card,
+  DataClassBadge,
   EmptyState,
   ErrorState,
   FreshnessBadge,
   PageSkeleton,
+  Select,
   SourceTag,
   StatTile,
   SyntheticTag,
@@ -42,10 +45,11 @@ import {
   Td,
   Th,
 } from "@/components/ui";
-import { useApi } from "@/lib/api";
+import { useMemo, useState } from "react";
+import { qs, useApi } from "@/lib/api";
 import { ROLE_LABELS, useAuth } from "@/lib/auth";
 import { fmt, fmtDate, fmtINR, fmtQty, title, UNIT_SHORT } from "@/lib/format";
-import type { Dashboard, InventoryItem, RoleCode, Trend, Warehouse } from "@/lib/types";
+import type { DataClass, Dashboard, InventoryItem, RoleCode, Trend, Warehouse } from "@/lib/types";
 
 const KPI_ICONS: Record<string, LucideIcon> = {
   users: Users,
@@ -70,8 +74,15 @@ function greeting() {
 }
 
 export default function DashboardPage() {
-  const { data, error, loading, reload } = useApi<Dashboard>("/dashboard");
+  const [regionId, setRegionId] = useState("");
+  const { data, error, loading, reload } = useApi<Dashboard>(`/dashboard${qs({ region_id: regionId })}`);
   const { can, me } = useAuth();
+  const scoped = useApi<Warehouse[]>(can("warehouse.read") ? "/warehouses" : null);
+  const regionOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of scoped.data ?? []) m.set(w.region.id, w.region.name);
+    return [...m].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [scoped.data]);
 
   if (loading && !data) return <PageSkeleton />;
   if (error) return <ErrorState title="Unable to load your dashboard" message={error.message} onRetry={reload} />;
@@ -82,6 +93,10 @@ export default function DashboardPage() {
   const hasWarehouses = (d.warehouses?.length ?? 0) > 0 || (d.inventory_items?.length ?? 0) > 0;
   const today = new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long" });
   const trendCommodity = d.role === "ANALYST" ? d.market?.find((m) => m.avg_modal !== null)?.commodity : undefined;
+  const envClass = (key: string) => d.environment?.items.find((i) => i.key === key)?.data_class as DataClass | undefined;
+  const inventoryClass = envClass("inventory");
+  const warehouseClass = envClass("warehouses");
+  const syntheticFigures = inventoryClass === "SYNTHETIC_DEMO" || inventoryClass === "MIXED" || warehouseClass === "SYNTHETIC_DEMO" || warehouseClass === "MIXED";
 
   return (
     <div className="space-y-6">
@@ -107,6 +122,19 @@ export default function DashboardPage() {
               {d.is_synthetic && <SyntheticTag />}
             </div>
           </div>
+          {regionOptions.length > 1 && (
+            <label className="flex shrink-0 items-center gap-2 text-xs font-medium text-ink-2">
+              Region
+              <Select value={regionId} onChange={(e) => setRegionId(e.target.value)} aria-label="Filter dashboard by region">
+                <option value="">All in my scope</option>
+                {regionOptions.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
         </div>
       </section>
 
@@ -126,8 +154,12 @@ export default function DashboardPage() {
           />
         ))}
       </div>
-      {d.is_synthetic && d.kpis.length > 0 && (
-        <p className="-mt-3 text-xs text-ink-3">Stock, capacity and movement figures above are synthetic demo values.</p>
+      {syntheticFigures && d.kpis.length > 0 && (
+        <p className="-mt-3 text-xs text-ink-3">
+          {inventoryClass === "MIXED" || warehouseClass === "MIXED"
+            ? "Stock and capacity figures above mix synthetic demo records with records your team entered — see Data environment below."
+            : "Stock, capacity and movement figures above are synthetic demo values."}
+        </p>
       )}
 
       {!hasWarehouses && (
@@ -157,6 +189,12 @@ export default function DashboardPage() {
       {d.weather && (d.role === "WAREHOUSE_MANAGER" || d.role === "LOGISTICS_MANAGER") && <WeatherBlock weather={d.weather} />}
 
       <div className="grid gap-6 lg:grid-cols-2 lg:[&>*:last-child:nth-child(odd)]:col-span-2">
+        {d.environment && (
+          <Card title="Data environment" subtitle="What each part of this dashboard is built on" icon={ShieldCheck}>
+            <EnvironmentPanel env={d.environment} />
+          </Card>
+        )}
+
         {d.data_sources && (
           <Card
             title="Platform & data health"
@@ -207,7 +245,7 @@ export default function DashboardPage() {
         )}
 
         {d.inventory_by_commodity && (
-          <Card title="Inventory by commodity" subtitle="Tonnes in stock across your scope" icon={Boxes}>
+          <Card title="Inventory by commodity" subtitle="Tonnes in stock across your scope" icon={Boxes} action={<DataClassBadge value={inventoryClass} />}>
             {d.inventory_by_commodity.length ? (
               <HBars
                 rows={d.inventory_by_commodity.map((c) => ({
@@ -224,7 +262,7 @@ export default function DashboardPage() {
         )}
 
         {d.inventory_by_region && (
-          <Card title="Inventory by region" subtitle="Which regions hold stock" icon={MapPin} flush>
+          <Card title="Inventory by region" subtitle="Which regions hold stock" icon={MapPin} flush action={<DataClassBadge value={inventoryClass} />}>
             {d.inventory_by_region.length ? (
               <Table compact>
                 <thead>
@@ -253,7 +291,12 @@ export default function DashboardPage() {
         )}
 
         {d.movement_summary && (
-          <Card title={`Stock movement — last ${d.movement_summary.days} days`} subtitle="Adjustments recorded in the movement ledger" icon={History}>
+          <Card
+            title={`Stock movement — last ${d.movement_summary.days} days`}
+            subtitle="Adjustments recorded in the movement ledger"
+            icon={History}
+            action={<DataClassBadge value={inventoryClass} />}
+          >
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-lg bg-sunken px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-xs text-ink-2">
@@ -283,8 +326,8 @@ export default function DashboardPage() {
       {d.market && d.role !== "PROCUREMENT_MANAGER" && <MarketBlock market={d.market} />}
       {d.weather && d.role !== "WAREHOUSE_MANAGER" && d.role !== "LOGISTICS_MANAGER" && <WeatherBlock weather={d.weather} />}
 
-      {d.warehouses && d.warehouses.length > 0 && <WarehouseTable warehouses={d.warehouses} showCoords={d.role === "LOGISTICS_MANAGER"} />}
-      {d.inventory_items && d.inventory_items.length > 0 && <StockTable items={d.inventory_items} />}
+      {d.warehouses && d.warehouses.length > 0 && <WarehouseTable warehouses={d.warehouses} showCoords={d.role === "LOGISTICS_MANAGER"} dataClass={warehouseClass} />}
+      {d.inventory_items && d.inventory_items.length > 0 && <StockTable items={d.inventory_items} dataClass={inventoryClass} />}
       {d.recent_movements && <RecentMovements rows={d.recent_movements} />}
     </div>
   );
@@ -342,7 +385,9 @@ function WeatherBlock({ weather }: { weather: NonNullable<Dashboard["weather"]> 
           <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
             <CloudSun className="h-4 w-4 text-brand" /> Weather at your warehouses
           </h2>
-          <p className="text-xs text-ink-3">Model-based current conditions for each warehouse location · source shown on each card</p>
+          <p className="text-xs text-ink-3">
+            Current conditions from the Open-Meteo weather model at each warehouse location · forecasts are labelled separately
+          </p>
         </div>
         <Link href="/weather" className="shrink-0 text-xs font-medium text-brand hover:underline">
           Weather →
@@ -390,9 +435,15 @@ function TrendCard({ commodity }: { commodity: string }) {
   );
 }
 
-function WarehouseTable({ warehouses, showCoords }: { warehouses: Warehouse[]; showCoords: boolean }) {
+function WarehouseTable({ warehouses, showCoords, dataClass }: { warehouses: Warehouse[]; showCoords: boolean; dataClass?: DataClass }) {
   return (
-    <Card title={showCoords ? "Warehouse locations" : "Warehouses"} subtitle="Stock against capacity" icon={WarehouseIcon} flush>
+    <Card
+      title={showCoords ? "Warehouse locations" : "Warehouses"}
+      subtitle="Stock against capacity"
+      icon={WarehouseIcon}
+      flush
+      action={<DataClassBadge value={dataClass} />}
+    >
       <Table>
         <thead>
           <tr>
@@ -414,6 +465,11 @@ function WarehouseTable({ warehouses, showCoords }: { warehouses: Warehouse[]; s
                 {w.status !== "ACTIVE" && (
                   <span className="ml-2">
                     <Badge tone="warn">{title(w.status)}</Badge>
+                  </span>
+                )}
+                {dataClass === "MIXED" && w.data_class === "SYNTHETIC_DEMO" && (
+                  <span className="ml-2">
+                    <DataClassBadge value={w.data_class} />
                   </span>
                 )}
               </Td>
@@ -438,9 +494,9 @@ function WarehouseTable({ warehouses, showCoords }: { warehouses: Warehouse[]; s
   );
 }
 
-function StockTable({ items }: { items: InventoryItem[] }) {
+function StockTable({ items, dataClass }: { items: InventoryItem[]; dataClass?: DataClass }) {
   return (
-    <Card title="Warehouse stock" subtitle="What is stored where" icon={Boxes} flush>
+    <Card title="Warehouse stock" subtitle="What is stored where" icon={Boxes} flush action={<DataClassBadge value={dataClass} />}>
       <Table>
         <thead>
           <tr>
@@ -455,7 +511,14 @@ function StockTable({ items }: { items: InventoryItem[] }) {
           {items.map((i) => (
             <tr key={i.id}>
               <Td>{i.warehouse.name}</Td>
-              <Td className="font-medium">{i.commodity.name}</Td>
+              <Td className="font-medium">
+                {i.commodity.name}
+                {dataClass === "MIXED" && i.data_class === "SYNTHETIC_DEMO" && (
+                  <span className="ml-2">
+                    <DataClassBadge value={i.data_class} />
+                  </span>
+                )}
+              </Td>
               <Td right>
                 {fmtQty(i.quantity)} {UNIT_SHORT[i.unit]}
               </Td>

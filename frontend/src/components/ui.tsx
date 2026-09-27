@@ -2,15 +2,19 @@
 
 import {
   AlertTriangle,
+  Building2,
   CheckCircle2,
   CircleDashed,
   Clock,
   Database,
   ExternalLink,
   FlaskConical,
+  Globe2,
   Info,
+  Layers,
   Loader2,
   RefreshCw,
+  Sparkles,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -154,6 +158,7 @@ const FRESHNESS: Record<string, { tone: Tone; icon: LucideIcon; text: string }> 
   DAILY: { tone: "brand", icon: Clock, text: "Daily" },
   HISTORICAL: { tone: "warn", icon: Clock, text: "Historical" },
   UNAVAILABLE: { tone: "neutral", icon: CircleDashed, text: "Data unavailable" },
+  ERROR: { tone: "bad", icon: AlertTriangle, text: "Update failed" },
 };
 
 /** Honest freshness label computed by the backend. Never shows "LIVE". */
@@ -194,6 +199,28 @@ export function SourceTag({ source, link }: { source: { key: string; name: strin
     </a>
   ) : (
     inner
+  );
+}
+
+const DATA_CLASS: Record<string, { label: string; tone: Tone; icon: LucideIcon; title: string }> = {
+  REAL_EXTERNAL: { label: "Real external", tone: "brand", icon: Globe2, title: "Fetched from a named public source" },
+  REAL_ORGANIZATION: { label: "Organization data", tone: "info", icon: Building2, title: "Entered or imported by your team" },
+  SYNTHETIC_DEMO: { label: "Synthetic demo", tone: "warn", icon: FlaskConical, title: "Created by the demo seed — not real" },
+  MIXED: { label: "Mixed data", tone: "warn", icon: Layers, title: "Part synthetic demo data, part organization data" },
+  MODEL_PREDICTION: { label: "Forecast", tone: "neutral", icon: Sparkles, title: "A model prediction, not an observation" },
+  UNAVAILABLE: { label: "No data", tone: "neutral", icon: CircleDashed, title: "No verified data available" },
+};
+
+/** What kind of data a figure is built on. Every card and table shows one. */
+export function DataClassBadge({ value, label }: { value: string | null | undefined; label?: string }) {
+  if (!value) return null;
+  const d = DATA_CLASS[value] ?? DATA_CLASS.UNAVAILABLE;
+  return (
+    <span title={d.title} className="inline-flex">
+      <Badge tone={d.tone} icon={d.icon}>
+        {label ?? d.label}
+      </Badge>
+    </span>
   );
 }
 
@@ -429,7 +456,7 @@ export function EmptyState({
 
 export function Table({ children, compact = false }: { children: React.ReactNode; compact?: boolean }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className={`row-hover w-full text-left text-sm ${compact ? "min-w-[360px]" : "min-w-[560px]"}`}>{children}</table>
     </div>
   );
