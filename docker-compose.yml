@@ -1,0 +1,22 @@
+name: agriflow
+
+# Local PostgreSQL for development. The API and frontend run on the host (see README).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agriflow
+      POSTGRES_PASSWORD: agriflow
+      POSTGRES_DB: agriflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/scripts/create-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agriflow"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:
