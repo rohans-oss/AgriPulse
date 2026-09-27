@@ -1,27 +1,65 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces Variable", ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --color-canvas: #f6f6f4;
+  /* Surfaces: warm paper tones */
+  --color-canvas: #f4f3ee;
   --color-surface: #ffffff;
-  --color-line: #e4e3df;
-  --color-ink: #151514;
-  --color-ink-2: #52514e;
-  --color-ink-3: #86857f;
+  --color-sunken: #f8f7f3;
+  --color-line: #e5e2d8;
+  --color-line-strong: #d6d2c4;
+  --color-ink: #16201a;
+  --color-ink-2: #4c5750;
+  --color-ink-3: #838a84;
 
+  /* Brand: forest green, with a harvest-gold accent used sparingly */
+  --color-forest-950: #0b1f15;
+  --color-forest-900: #10291c;
+  --color-forest-800: #173826;
+  --color-forest-700: #1e4a32;
   --color-brand: #1f6b45;
   --color-brand-hover: #185838;
-  --color-brand-soft: #e8f1ec;
+  --color-brand-soft: #e7f0ea;
+  --color-harvest: #d19a2a;
+  --color-harvest-soft: #fbf1dc;
 
-  /* data-viz slots (validated reference palette) */
+  /* Data-viz slots (validated reference palette) */
   --color-series-1: #2a78d6;
   --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
 
-  /* status: always paired with a text label */
+  /* Status: always paired with an icon or label */
   --color-good: #1a7f37;
   --color-warn: #b25e00;
   --color-bad: #c42b2b;
+
+  --shadow-card: 0 1px 2px rgb(22 32 26 / 0.04), 0 1px 1px rgb(22 32 26 / 0.03);
+  --shadow-lift: 0 10px 30px -12px rgb(22 32 26 / 0.18), 0 2px 6px rgb(22 32 26 / 0.05);
+
+  --animate-fade-up: fade-up 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-fade-in: fade-in 300ms ease-out both;
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-pop: pop 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+  }
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(6px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
 html,
@@ -32,8 +70,47 @@ body {
 
 body {
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #eeece5 0px, #f7f6f1 120px, #eeece5 240px);
+  background-size: 800px 100%;
+  animation: var(--animate-shimmer);
+  border-radius: 6px;
+}
+
+/* Staggered entrance for grids of cards: set --i on each child. */
+.stagger > * {
+  animation: var(--animate-fade-up);
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+dialog[open] {
+  animation: var(--animate-pop);
+}
+dialog::backdrop {
+  animation: var(--animate-fade-in);
+}
+
+/* Table rows: gentle hover */
+.row-hover tbody tr {
+  transition: background-color 120ms ease;
+}
+.row-hover tbody tr:hover {
+  background: var(--color-sunken);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
 }

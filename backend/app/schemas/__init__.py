@@ -172,6 +172,7 @@ class CommodityCreate(BaseModel):
     category: CommodityCategory
     unit: QuantityUnit = QuantityUnit.TONNE
     status: RecordStatus = RecordStatus.ACTIVE
+    market_name: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None = None
 
 
 class CommodityUpdate(BaseModel):
@@ -179,6 +180,7 @@ class CommodityUpdate(BaseModel):
     category: CommodityCategory | None = None
     unit: QuantityUnit | None = None
     status: RecordStatus | None = None
+    market_name: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None = None
 
 
 class CommodityOut(ORM):
@@ -187,6 +189,7 @@ class CommodityOut(ORM):
     category: CommodityCategory
     unit: QuantityUnit
     status: RecordStatus
+    market_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

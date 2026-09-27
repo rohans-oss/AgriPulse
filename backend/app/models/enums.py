@@ -60,3 +60,41 @@ class MovementType(StrEnum):
     INBOUND = "INBOUND"  # quantity increased
     OUTBOUND = "OUTBOUND"  # quantity decreased
     REMOVAL = "REMOVAL"  # record deleted
+
+
+# --------------------------------------------------------------------------- V2
+
+
+class DataKind(StrEnum):
+    MARKET_PRICES = "MARKET_PRICES"
+    WEATHER = "WEATHER"
+    INVENTORY = "INVENTORY"
+
+
+class SourceOrigin(StrEnum):
+    OFFICIAL_API = "OFFICIAL_API"  # government / official publisher API
+    PUBLIC_API = "PUBLIC_API"  # documented third-party public API
+    USER_UPLOAD = "USER_UPLOAD"  # CSV uploaded by an organization user
+
+
+class RunTrigger(StrEnum):
+    MANUAL = "MANUAL"
+    SCHEDULED = "SCHEDULED"
+    UPLOAD = "UPLOAD"
+
+
+class RunStatus(StrEnum):
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    PARTIAL = "PARTIAL"  # finished, some rows or locations failed
+    FAILED = "FAILED"
+
+
+class IssueSeverity(StrEnum):
+    ERROR = "ERROR"  # row rejected
+    WARNING = "WARNING"  # row kept, flagged
+
+
+class WeatherKind(StrEnum):
+    CURRENT = "CURRENT"
+    DAILY = "DAILY"

@@ -1,5 +1,6 @@
 "use client";
 
+import { Sprout as SproutIcon } from "lucide-react";
 import { useState } from "react";
 import {
   Badge,
@@ -26,8 +27,8 @@ import type { Category, Commodity, RecordStatus, Unit } from "@/lib/types";
 const CATEGORIES: Category[] = ["VEGETABLE", "FRUIT", "GRAIN", "PULSE", "SPICE", "OILSEED", "OTHER"];
 const UNITS: Unit[] = ["TONNE", "QUINTAL", "KG"];
 
-type Form = { name: string; category: Category; unit: Unit; status: RecordStatus };
-const EMPTY: Form = { name: "", category: "VEGETABLE", unit: "TONNE", status: "ACTIVE" };
+type Form = { name: string; category: Category; unit: Unit; status: RecordStatus; market_name: string };
+const EMPTY: Form = { name: "", category: "VEGETABLE", unit: "TONNE", status: "ACTIVE", market_name: "" };
 
 export default function CommoditiesPage() {
   const { can } = useAuth();
@@ -52,6 +53,8 @@ export default function CommoditiesPage() {
   return (
     <div>
       <PageHeader
+        icon={SproutIcon}
+        eyebrow="Operations"
         title="Commodities"
         description="Products this organization stores and tracks, with the unit their quantities are recorded in."
         actions={manage && <Button onClick={() => setEditing("new")}>Add commodity</Button>}
@@ -90,6 +93,8 @@ export default function CommoditiesPage() {
           </div>
         ) : !data?.length ? (
           <EmptyState
+            art
+            icon={SproutIcon}
             title={category || status ? "No commodities match these filters" : "No commodities yet"}
             action={manage && !category && !status && <Button onClick={() => setEditing("new")}>Add commodity</Button>}
           />
@@ -100,6 +105,7 @@ export default function CommoditiesPage() {
                 <Th>Name</Th>
                 <Th>Category</Th>
                 <Th>Unit</Th>
+                <Th>Market data name</Th>
                 <Th>Status</Th>
                 <Th>Updated</Th>
                 {manage && <Th />}
@@ -111,6 +117,7 @@ export default function CommoditiesPage() {
                   <Td className="font-medium">{c.name}</Td>
                   <Td>{title(c.category)}</Td>
                   <Td>{title(c.unit)}</Td>
+                  <Td className="text-ink-2">{c.market_name || <span className="text-ink-3">Same as name</span>}</Td>
                   <Td>
                     <Badge tone={c.status === "ACTIVE" ? "good" : "neutral"}>{title(c.status)}</Badge>
                   </Td>
@@ -166,7 +173,7 @@ function CommodityModal({
     setError(null);
     setForm(
       commodity && commodity !== "new"
-        ? { name: commodity.name, category: commodity.category, unit: commodity.unit, status: commodity.status }
+        ? { name: commodity.name, category: commodity.category, unit: commodity.unit, status: commodity.status, market_name: commodity.market_name ?? "" }
         : EMPTY,
     );
   }
@@ -176,8 +183,9 @@ function CommodityModal({
     setBusy(true);
     setError(null);
     try {
-      if (isNew) await api("/commodities", { method: "POST", json: form });
-      else if (commodity) await api(`/commodities/${commodity.id}`, { method: "PATCH", json: form });
+      const body = { ...form, market_name: form.market_name.trim() || null };
+      if (isNew) await api("/commodities", { method: "POST", json: body });
+      else if (commodity) await api(`/commodities/${commodity.id}`, { method: "PATCH", json: body });
       onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
@@ -212,6 +220,9 @@ function CommodityModal({
             </Select>
           </Field>
         </div>
+        <Field label="Name in market data" hint="Optional. The AGMARKNET commodity name if it differs, e.g. Paddy(Dhan)(Common) for Rice.">
+          <Input maxLength={120} value={form.market_name} placeholder={form.name || "Same as name"} onChange={(e) => setForm({ ...form, market_name: e.target.value })} />
+        </Field>
         <Field label="Status" hint="Inactive commodities cannot receive new inventory records">
           <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as RecordStatus })}>
             <option value="ACTIVE">Active</option>

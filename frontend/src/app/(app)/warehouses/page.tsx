@@ -1,5 +1,6 @@
 "use client";
 
+import { Warehouse as WarehouseIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { WarehouseModal } from "@/components/WarehouseModal";
@@ -38,6 +39,8 @@ export default function WarehousesPage() {
   return (
     <div>
       <PageHeader
+        icon={WarehouseIcon}
+        eyebrow="Operations"
         title="Warehouses"
         description={
           me?.scope.org_wide
@@ -81,6 +84,8 @@ export default function WarehousesPage() {
           </div>
         ) : !data?.length ? (
           <EmptyState
+            art
+            icon={WarehouseIcon}
             title={filtered ? "No warehouses match these filters" : "No warehouses available"}
             body={
               filtered

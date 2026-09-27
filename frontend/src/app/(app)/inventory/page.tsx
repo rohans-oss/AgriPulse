@@ -1,5 +1,6 @@
 "use client";
 
+import { Boxes as BoxesIcon } from "lucide-react";
 import { useState } from "react";
 import { InventoryTable } from "@/components/InventoryTable";
 import { RecentMovements } from "@/components/MovementsTable";
@@ -33,6 +34,8 @@ export default function InventoryPage() {
   return (
     <div>
       <PageHeader
+        icon={BoxesIcon}
+        eyebrow="Operations"
         title="Inventory"
         description={
           items.data

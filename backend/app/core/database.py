@@ -30,3 +30,8 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def get_session_factory():
+    """Session factory for work that outlives the request (background ingestion runs)."""
+    return SessionLocal

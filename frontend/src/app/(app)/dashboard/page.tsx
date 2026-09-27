@@ -1,7 +1,31 @@
 "use client";
 
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDownToLine,
+  ArrowRight,
+  ArrowUpFromLine,
+  Boxes,
+  Building2,
+  CloudSun,
+  Container,
+  Database,
+  Gauge,
+  History,
+  LineChart as LineIcon,
+  MapPin,
+  PackageSearch,
+  Snowflake,
+  Sprout,
+  TrendingUp,
+  Users,
+  Warehouse as WarehouseIcon,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
-import { DailyMovementChart, HBars } from "@/components/charts";
+import { DailyMovementChart, HBars, LineChart, NotEnoughData } from "@/components/charts";
+import { PriceCard, SourceHealthRow, WeatherCard } from "@/components/data";
 import { RecentMovements } from "@/components/MovementsTable";
 import {
   Badge,
@@ -9,61 +33,108 @@ import {
   Card,
   EmptyState,
   ErrorState,
-  Loading,
-  PageHeader,
+  FreshnessBadge,
+  PageSkeleton,
+  SourceTag,
   StatTile,
+  SyntheticTag,
   Table,
   Td,
   Th,
 } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { ROLE_LABELS, useAuth } from "@/lib/auth";
-import { fmt, fmtDate, fmtQty, title, UNIT_SHORT } from "@/lib/format";
-import type { Dashboard, InventoryItem, RoleCode, Warehouse } from "@/lib/types";
+import { fmt, fmtDate, fmtINR, fmtQty, title, UNIT_SHORT } from "@/lib/format";
+import type { Dashboard, InventoryItem, RoleCode, Trend, Warehouse } from "@/lib/types";
+
+const KPI_ICONS: Record<string, LucideIcon> = {
+  users: Users,
+  warehouses: WarehouseIcon,
+  assigned: WarehouseIcon,
+  commodities: Sprout,
+  inventory: Boxes,
+  stock: Boxes,
+  regions: MapPin,
+  utilization: Gauge,
+  near_capacity: AlertTriangle,
+  capacity: Container,
+  inbound: ArrowDownToLine,
+  outbound: ArrowUpFromLine,
+  cold: Snowflake,
+  movements: Activity,
+};
+
+function greeting() {
+  const h = Number(new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false }));
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
 
 export default function DashboardPage() {
   const { data, error, loading, reload } = useApi<Dashboard>("/dashboard");
-  const { can } = useAuth();
+  const { can, me } = useAuth();
 
-  if (loading && !data) return <Loading />;
-  if (error) return <ErrorState message={error.message} onRetry={reload} />;
-  if (!data) return null;
+  if (loading && !data) return <PageSkeleton />;
+  if (error) return <ErrorState title="Unable to load your dashboard" message={error.message} onRetry={reload} />;
+  if (!data || !me) return null;
 
   const d = data;
-  const hasStock = d.kpis.length > 0 && (d.inventory_by_commodity?.length || d.inventory_items?.length);
+  const firstName = me.user.full_name.split(/\s+/)[0];
+  const hasWarehouses = (d.warehouses?.length ?? 0) > 0 || (d.inventory_items?.length ?? 0) > 0;
+  const today = new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long" });
+  const trendCommodity = d.role === "ANALYST" ? d.market?.find((m) => m.avg_modal !== null)?.commodity : undefined;
 
   return (
-    <div>
-      <PageHeader
-        title={d.title}
-        description={
-          <>
-            {d.subtitle} · <span className="text-ink">{d.scope_label}</span>
-            {d.is_synthetic && (
-              <span className="ml-2">
-                <Badge tone="warn">Synthetic data</Badge>
-              </span>
-            )}
-          </>
-        }
-      />
+    <div className="space-y-6">
+      {/* Welcome / context */}
+      <section className="relative animate-fade-up overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 hidden w-3/5 bg-[url(/art/fields.svg)] sm:block bg-cover bg-center [mask-image:linear-gradient(to_left,black_35%,transparent_95%)]"
+        />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-gradient-to-r from-surface from-35% via-surface/70 to-surface/10" />
+        <div className="relative flex flex-col gap-4 px-6 py-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-xs font-medium text-ink-3">{today}</div>
+            <h1 className="mt-1 font-display text-[30px] font-medium leading-tight tracking-tight">
+              {greeting()}, {firstName}
+            </h1>
+            <p className="mt-1 text-sm text-ink-2">
+              <span className="font-semibold text-ink">{d.title}</span> — {d.subtitle}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Badge tone="brand">{d.role ? ROLE_LABELS[d.role as RoleCode] : "No role"}</Badge>
+              <Badge icon={MapPin}>{d.scope_label}</Badge>
+              {d.is_synthetic && <SyntheticTag />}
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {d.kpis.map((k) => (
+      {/* KPIs */}
+      <div className="stagger grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {d.kpis.map((k, i) => (
           <StatTile
             key={k.key}
             label={k.label}
-            value={typeof k.value === "number" ? fmt(k.value) : k.value}
+            value={typeof k.value === "number" ? k.value : k.value}
+            format={k.unit === "t" || k.unit === "%" ? (n) => fmt(n) : undefined}
             unit={k.unit}
             hint={k.hint}
             tone={k.tone}
+            icon={KPI_ICONS[k.key]}
+            style={{ "--i": i } as React.CSSProperties}
           />
         ))}
       </div>
+      {d.is_synthetic && d.kpis.length > 0 && (
+        <p className="-mt-3 text-xs text-ink-3">Stock, capacity and movement figures above are synthetic demo values.</p>
+      )}
 
-      {!hasStock && d.warehouses?.length === 0 && (
-        <Card className="mt-6">
+      {!hasWarehouses && (
+        <Card>
           <EmptyState
+            art
+            icon={WarehouseIcon}
             title="No warehouses in your scope yet"
             body={
               can("warehouse.manage")
@@ -72,8 +143,8 @@ export default function DashboardPage() {
             }
             action={
               can("warehouse.manage") ? (
-                <Link href="/warehouses" className="text-sm font-medium text-brand hover:underline">
-                  Set up warehouses →
+                <Link href="/warehouses" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
+                  Set up warehouses <ArrowRight className="h-4 w-4" />
                 </Link>
               ) : undefined
             }
@@ -81,44 +152,62 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      {/* Real external data first where the role needs it */}
+      {d.market && d.role === "PROCUREMENT_MANAGER" && <MarketBlock market={d.market} />}
+      {d.weather && (d.role === "WAREHOUSE_MANAGER" || d.role === "LOGISTICS_MANAGER") && <WeatherBlock weather={d.weather} />}
+
+      <div className="grid gap-6 lg:grid-cols-2 lg:[&>*:last-child:nth-child(odd)]:col-span-2">
+        {d.data_sources && (
+          <Card
+            title="Platform & data health"
+            subtitle="Are data sources working, and when did they last update?"
+            icon={Database}
+            action={
+              <Link href="/data" className="text-xs font-medium text-brand hover:underline">
+                Data sources →
+              </Link>
+            }
+          >
+            <div className="-mx-2 -my-1 divide-y divide-line">
+              {d.data_sources.map((s) => (
+                <SourceHealthRow key={s.key} s={s} />
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {trendCommodity && <TrendCard commodity={trendCommodity} />}
+
         {d.organization && (
-          <Card title="Organization">
+          <Card title="Organization" subtitle="Workspace, people and roles" icon={Building2}>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-              <dt className="text-ink-2">Name</dt>
+              <dt className="text-ink-3">Name</dt>
               <dd className="font-medium">{d.organization.organization.name}</dd>
-              <dt className="text-ink-2">Workspace ID</dt>
+              <dt className="text-ink-3">Workspace ID</dt>
               <dd className="truncate font-mono text-xs">{d.organization.organization.slug}</dd>
-              <dt className="text-ink-2">Created</dt>
+              <dt className="text-ink-3">Created</dt>
               <dd>{fmtDate(d.organization.organization.created_at)}</dd>
-              <dt className="text-ink-2">Users</dt>
+              <dt className="text-ink-3">Users</dt>
               <dd>
                 {d.organization.active_users} active of {d.organization.total_users}
               </dd>
             </dl>
             <div className="mt-4 border-t border-line pt-3">
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">Users by role</div>
-              <ul className="grid grid-cols-2 gap-1 text-sm">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Users by role</div>
+              <ul className="grid grid-cols-1 gap-x-10 gap-y-1 text-sm sm:grid-cols-2">
                 {Object.entries(d.organization.users_by_role).map(([role, n]) => (
                   <li key={role} className="flex justify-between gap-2">
                     <span className="text-ink-2">{ROLE_LABELS[role as RoleCode] ?? role}</span>
-                    <span className="tabular">{n}</span>
+                    <span className="tabular font-medium">{n}</span>
                   </li>
                 ))}
               </ul>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-sm">
-              {can("users.manage") && <QuickLink href="/users">Manage users</QuickLink>}
-              {can("region.manage") && <QuickLink href="/regions">Regions</QuickLink>}
-              {can("commodity.manage") && <QuickLink href="/commodities">Commodities</QuickLink>}
-              {can("warehouse.manage") && <QuickLink href="/warehouses">Warehouses</QuickLink>}
-              {can("settings.manage") && <QuickLink href="/settings">Settings & audit log</QuickLink>}
             </div>
           </Card>
         )}
 
         {d.inventory_by_commodity && (
-          <Card title="Inventory by commodity">
+          <Card title="Inventory by commodity" subtitle="Tonnes in stock across your scope" icon={Boxes}>
             {d.inventory_by_commodity.length ? (
               <HBars
                 rows={d.inventory_by_commodity.map((c) => ({
@@ -129,13 +218,13 @@ export default function DashboardPage() {
                 }))}
               />
             ) : (
-              <EmptyState title="No stock recorded" />
+              <EmptyState icon={PackageSearch} title="No stock recorded" />
             )}
           </Card>
         )}
 
         {d.inventory_by_region && (
-          <Card title="Inventory by region" flush>
+          <Card title="Inventory by region" subtitle="Which regions hold stock" icon={MapPin} flush>
             {d.inventory_by_region.length ? (
               <Table compact>
                 <thead>
@@ -149,7 +238,7 @@ export default function DashboardPage() {
                 <tbody>
                   {d.inventory_by_region.map((r) => (
                     <tr key={r.region_id}>
-                      <Td>{r.name}</Td>
+                      <Td className="font-medium">{r.name}</Td>
                       <Td right>{r.warehouse_count}</Td>
                       <Td right>{fmt(r.quantity_tonnes)}</Td>
                       <Td right>{fmt(r.capacity_tonnes)}</Td>
@@ -158,30 +247,32 @@ export default function DashboardPage() {
                 </tbody>
               </Table>
             ) : (
-              <EmptyState title="No regions yet" />
+              <EmptyState icon={MapPin} title="No regions yet" />
             )}
           </Card>
         )}
 
         {d.movement_summary && (
-          <Card title={`Stock movement — last ${d.movement_summary.days} days`}>
+          <Card title={`Stock movement — last ${d.movement_summary.days} days`} subtitle="Adjustments recorded in the movement ledger" icon={History}>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs text-ink-2">Inbound</div>
-                <div className="tabular text-xl font-semibold">{fmt(d.movement_summary.inbound_tonnes)} t</div>
+              <div className="rounded-lg bg-sunken px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-xs text-ink-2">
+                  <ArrowDownToLine className="h-3.5 w-3.5 text-series-1" /> Inbound
+                </div>
+                <div className="tabular mt-0.5 text-xl font-semibold">{fmt(d.movement_summary.inbound_tonnes)} t</div>
                 <div className="text-xs text-ink-3">{d.movement_summary.inbound_count} movements</div>
               </div>
-              <div>
-                <div className="text-xs text-ink-2">Outbound</div>
-                <div className="tabular text-xl font-semibold">{fmt(d.movement_summary.outbound_tonnes)} t</div>
+              <div className="rounded-lg bg-sunken px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-xs text-ink-2">
+                  <ArrowUpFromLine className="h-3.5 w-3.5 text-series-2" /> Outbound
+                </div>
+                <div className="tabular mt-0.5 text-xl font-semibold">{fmt(d.movement_summary.outbound_tonnes)} t</div>
                 <div className="text-xs text-ink-3">{d.movement_summary.outbound_count} movements</div>
               </div>
             </div>
             {d.daily_movements && (
               <div className="mt-5 border-t border-line pt-4">
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
-                  Daily movement, last 14 days
-                </div>
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Daily movement, last 14 days</div>
                 <DailyMovementChart rows={d.daily_movements} />
               </div>
             )}
@@ -189,26 +280,119 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {d.warehouses && d.warehouses.length > 0 && (
-        <WarehouseTable warehouses={d.warehouses} showCoords={d.role === "LOGISTICS_MANAGER"} />
-      )}
+      {d.market && d.role !== "PROCUREMENT_MANAGER" && <MarketBlock market={d.market} />}
+      {d.weather && d.role !== "WAREHOUSE_MANAGER" && d.role !== "LOGISTICS_MANAGER" && <WeatherBlock weather={d.weather} />}
+
+      {d.warehouses && d.warehouses.length > 0 && <WarehouseTable warehouses={d.warehouses} showCoords={d.role === "LOGISTICS_MANAGER"} />}
       {d.inventory_items && d.inventory_items.length > 0 && <StockTable items={d.inventory_items} />}
       {d.recent_movements && <RecentMovements rows={d.recent_movements} />}
     </div>
   );
 }
 
-function QuickLink({ href, children }: { href: string; children: React.ReactNode }) {
+function MarketBlock({ market }: { market: NonNullable<Dashboard["market"]> }) {
+  const withData = market.filter((m) => m.avg_modal !== null);
   return (
-    <Link href={href} className="font-medium text-brand hover:underline">
-      {children}
-    </Link>
+    <section className="animate-fade-up">
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+            <TrendingUp className="h-4 w-4 text-brand" /> Mandi prices for your commodities
+          </h2>
+          <p className="text-xs text-ink-3">Average modal price across reporting markets · ₹ per quintal · each card names its source</p>
+        </div>
+        <Link href="/market" className="shrink-0 text-xs font-medium text-brand hover:underline">
+          Market prices →
+        </Link>
+      </div>
+      {market.length === 0 ? (
+        <Card>
+          <EmptyState icon={Sprout} title="No commodities in your catalog" body="Add commodities to see their market prices here." />
+        </Card>
+      ) : withData.length === 0 ? (
+        <Card>
+          <EmptyState
+            art
+            icon={LineIcon}
+            title="No market data available yet"
+            body="No mandi reports have been fetched or uploaded for your commodities. Check the data source status or upload an AGMARKNET export."
+            action={
+              <Link href="/data" className="text-sm font-medium text-brand hover:underline">
+                Check data sources →
+              </Link>
+            }
+          />
+        </Card>
+      ) : (
+        <div className="stagger grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {market.map((p, i) => (
+            <PriceCard key={`${p.commodity}-${p.source?.key ?? "none"}`} p={p} style={{ "--i": i } as React.CSSProperties} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WeatherBlock({ weather }: { weather: NonNullable<Dashboard["weather"]> }) {
+  return (
+    <section className="animate-fade-up">
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+            <CloudSun className="h-4 w-4 text-brand" /> Weather at your warehouses
+          </h2>
+          <p className="text-xs text-ink-3">Model-based current conditions for each warehouse location · source shown on each card</p>
+        </div>
+        <Link href="/weather" className="shrink-0 text-xs font-medium text-brand hover:underline">
+          Weather →
+        </Link>
+      </div>
+      {weather.length === 0 ? (
+        <Card>
+          <EmptyState icon={CloudSun} title="No warehouses in your scope" />
+        </Card>
+      ) : (
+        <div className="stagger grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {weather.map((w, i) => (
+            <WeatherCard key={w.warehouse.id} w={w} style={{ "--i": i } as React.CSSProperties} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TrendCard({ commodity }: { commodity: string }) {
+  const { data, error, loading } = useApi<Trend>(`/market/trend?commodity=${encodeURIComponent(commodity)}&days=90`);
+  const pts = data?.series[0]?.points ?? [];
+  return (
+    <Card
+      title={`${commodity} price trend`}
+      subtitle="Average modal price, ₹ per quintal"
+      icon={LineIcon}
+      action={data && <FreshnessBadge freshness={data.freshness} />}
+      footer={data?.source ? <SourceTag source={data.source} /> : undefined}
+    >
+      {loading && !data ? (
+        <div className="skeleton h-52" />
+      ) : error ? (
+        <ErrorState title="Unable to load price trend" message={error.message} />
+      ) : pts.length < 2 ? (
+        <NotEnoughData sub="A trend needs reports on at least two dates. History builds up as prices are fetched each day." />
+      ) : (
+        <LineChart
+          series={data!.series.map((s) => ({ label: s.label, points: s.points.map((p) => ({ date: p.date, value: p.modal, note: `${p.markets} market(s)` })) }))}
+          valueFormat={(v) => fmtINR(v)}
+        />
+      )}
+    </Card>
   );
 }
 
 function WarehouseTable({ warehouses, showCoords }: { warehouses: Warehouse[]; showCoords: boolean }) {
   return (
-    <Card title={showCoords ? "Warehouse locations" : "Warehouses"} flush className="mt-6">
+    <Card title={showCoords ? "Warehouse locations" : "Warehouses"} subtitle="Stock against capacity" icon={WarehouseIcon} flush>
       <Table>
         <thead>
           <tr>
@@ -256,7 +440,7 @@ function WarehouseTable({ warehouses, showCoords }: { warehouses: Warehouse[]; s
 
 function StockTable({ items }: { items: InventoryItem[] }) {
   return (
-    <Card title="Warehouse stock" flush className="mt-6">
+    <Card title="Warehouse stock" subtitle="What is stored where" icon={Boxes} flush>
       <Table>
         <thead>
           <tr>
@@ -271,7 +455,7 @@ function StockTable({ items }: { items: InventoryItem[] }) {
           {items.map((i) => (
             <tr key={i.id}>
               <Td>{i.warehouse.name}</Td>
-              <Td>{i.commodity.name}</Td>
+              <Td className="font-medium">{i.commodity.name}</Td>
               <Td right>
                 {fmtQty(i.quantity)} {UNIT_SHORT[i.unit]}
               </Td>

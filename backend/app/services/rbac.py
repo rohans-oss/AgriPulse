@@ -33,6 +33,9 @@ class P:
     USERS_MANAGE = "users.manage"
     SETTINGS_MANAGE = "settings.manage"
     AUDIT_READ = "audit.read"
+    DATA_READ = "data.read"
+    DATA_INGEST = "data.ingest"
+    DATA_IMPORT = "data.import"
 
 
 PERMISSIONS: dict[str, str] = {
@@ -54,9 +57,12 @@ PERMISSIONS: dict[str, str] = {
     P.USERS_MANAGE: "Create users and change roles and location scope",
     P.SETTINGS_MANAGE: "Change organization settings",
     P.AUDIT_READ: "View the audit log",
+    P.DATA_READ: "View external market, weather and data-source information",
+    P.DATA_INGEST: "Fetch data from external sources",
+    P.DATA_IMPORT: "Upload market price files",
 }
 
-_READ_MASTER = [P.REGION_READ, P.COMMODITY_READ, P.WAREHOUSE_READ, P.INVENTORY_READ]
+_READ_MASTER = [P.REGION_READ, P.COMMODITY_READ, P.WAREHOUSE_READ, P.INVENTORY_READ, P.DATA_READ]
 
 ROLES: dict[RoleCode, dict] = {
     RoleCode.ORGANIZATION_ADMIN: {
@@ -75,6 +81,8 @@ ROLES: dict[RoleCode, dict] = {
             P.PROCUREMENT_READ,
             P.LOGISTICS_READ,
             P.ANALYTICS_READ,
+            P.DATA_INGEST,
+            P.DATA_IMPORT,
         ],
     },
     RoleCode.PROCUREMENT_MANAGER: {
@@ -95,7 +103,7 @@ ROLES: dict[RoleCode, dict] = {
     RoleCode.ANALYST: {
         "name": "Analyst",
         "description": "Explores inventory data and history.",
-        "permissions": _READ_MASTER + [P.ANALYTICS_READ],
+        "permissions": _READ_MASTER + [P.ANALYTICS_READ, P.DATA_IMPORT],
     },
     RoleCode.VIEWER: {
         "name": "Viewer",

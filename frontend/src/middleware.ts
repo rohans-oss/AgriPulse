@@ -23,5 +23,6 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  // Skip API calls, Next internals and static assets (artwork must load on the sign-in page).
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|art/|.*\\.(?:svg|png|jpg|jpeg|webp|ico|woff2?)$).*)"],
 };

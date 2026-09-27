@@ -8,8 +8,9 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.database import Base, get_db
+from app.core.database import Base, get_db, get_session_factory
 from app.main import create_app
+from app.services.data.sources import sync_sources
 from app.services.rbac import sync_rbac
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite://")
@@ -38,6 +39,7 @@ def _schema():
     Base.metadata.create_all(engine)
     with TestingSession() as db:
         sync_rbac(db)
+        sync_sources(db)
     yield
     Base.metadata.drop_all(engine)
 
@@ -57,6 +59,7 @@ def client():
             yield session
 
     app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_session_factory] = lambda: TestingSession
     with TestClient(app) as c:
         yield c
 

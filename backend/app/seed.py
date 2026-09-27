@@ -30,6 +30,7 @@ from app.models import (
     Warehouse,
 )
 from app.models.enums import CommodityCategory, MovementType, QuantityUnit, RecordStatus, RoleCode, StorageType
+from app.services.data.sources import sync_sources
 from app.services.rbac import get_system_role, sync_rbac
 
 DEMO_SLUG = "agriflow-demo-foods"
@@ -104,6 +105,7 @@ def seed(reset: bool = False) -> None:
     rng = random.Random(42)
     with SessionLocal() as db:
         sync_rbac(db)
+        sync_sources(db)
         if reset:
             _reset(db)
         if db.scalar(select(Organization).where(Organization.slug == DEMO_SLUG)):

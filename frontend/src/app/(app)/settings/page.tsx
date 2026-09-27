@@ -1,5 +1,6 @@
 "use client";
 
+import { Settings as SettingsIcon, Building2, ScrollText } from "lucide-react";
 import { useState } from "react";
 import {
   Button,
@@ -29,7 +30,12 @@ export default function SettingsPage() {
   const audit = useApi<AuditEntry[]>(can("audit.read") ? "/audit-logs?limit=100" : null);
 
   if (!can("settings.manage")) {
-    return <ErrorState message="You do not have permission to change organization settings." />;
+    return (
+      <div>
+        <PageHeader icon={SettingsIcon} eyebrow="Administration" title="Settings" />
+        <ErrorState title="No access" message="Your role cannot change organization settings. Ask an organization admin if you need a change." />
+      </div>
+    );
   }
 
   async function save(e: React.FormEvent) {
@@ -51,9 +57,9 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Organization details and the audit trail of important actions." />
+      <PageHeader icon={SettingsIcon} eyebrow="Administration" title="Settings" description="Organization details and the audit trail of important actions." />
 
-      <Card title="Organization">
+      <Card title="Organization" subtitle="Name and workspace identifier" icon={Building2}>
         <form onSubmit={save} className="max-w-md space-y-4">
           <Field label="Organization name">
             <Input required maxLength={160} value={name} onChange={(e) => setName(e.target.value)} />
@@ -72,7 +78,7 @@ export default function SettingsPage() {
       </Card>
 
       {can("audit.read") && (
-        <Card title="Audit log (latest 100)" flush className="mt-6">
+        <Card title="Audit log" subtitle="Latest 100 important actions in this organization" icon={ScrollText} flush className="mt-6">
           {audit.loading && !audit.data ? (
             <div className="px-4">
               <Loading />
@@ -82,7 +88,7 @@ export default function SettingsPage() {
               <ErrorState message={audit.error.message} onRetry={audit.reload} />
             </div>
           ) : !audit.data?.length ? (
-            <EmptyState title="No audit entries yet" />
+            <EmptyState icon={ScrollText} title="No audit entries yet" />
           ) : (
             <Table>
               <thead>

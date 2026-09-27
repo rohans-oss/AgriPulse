@@ -17,6 +17,8 @@ from app.core.database import get_db
 from app.models import Commodity, InventoryItem, InventoryMovement, Region, User, Warehouse
 from app.models.enums import MovementType, RecordStatus, RoleCode, StorageType
 from app.schemas import InventoryOut, MovementOut, OrganizationOut, WarehouseOut
+from app.schemas.data import LatestPrice, SourceStatus, WeatherNow
+from app.services.data import queries as data_queries
 from app.services.rbac import P
 from app.services.serializers import inventory_out, movement_out, to_tonnes, warehouse_out, warehouse_usage
 
@@ -88,6 +90,10 @@ class DashboardOut(BaseModel):
     movement_summary: MovementSummary | None = None
     daily_movements: list[DailyMovement] | None = None
     recent_movements: list[MovementOut] | None = None
+    # V2 — real external data (always carries its own source and freshness)
+    market: list[LatestPrice] | None = None
+    weather: list[WeatherNow] | None = None
+    data_sources: list[SourceStatus] | None = None
 
 
 TITLES = {
@@ -335,4 +341,29 @@ def get_dashboard(ctx: AuthContext = Depends(get_auth), db: Session = Depends(ge
         if ctx.has(P.WAREHOUSE_READ):
             out.warehouses = d.warehouse_rows()
 
+    _add_external(db, ctx, out, role)
     return out
+
+
+# Which external-data blocks each role's dashboard shows.
+EXTERNAL = {
+    RoleCode.ORGANIZATION_ADMIN.value: {"sources", "market"},
+    RoleCode.OPERATIONS_MANAGER.value: {"market", "weather"},
+    RoleCode.PROCUREMENT_MANAGER.value: {"market"},
+    RoleCode.WAREHOUSE_MANAGER.value: {"weather"},
+    RoleCode.LOGISTICS_MANAGER.value: {"weather"},
+    RoleCode.ANALYST.value: {"market", "sources"},
+    RoleCode.VIEWER.value: {"market"},
+}
+
+
+def _add_external(db: Session, ctx: AuthContext, out: DashboardOut, role: str | None) -> None:
+    if not ctx.has(P.DATA_READ):
+        return
+    blocks = EXTERNAL.get(role or "", set())
+    if "market" in blocks:
+        out.market = data_queries.latest_prices(db, ctx)
+    if "weather" in blocks and ctx.has(P.WAREHOUSE_READ):
+        out.weather = data_queries.weather_now(db, ctx)
+    if "sources" in blocks:
+        out.data_sources = data_queries.source_statuses(db, ctx)

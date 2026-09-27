@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Boxes, PackageSearch, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Button, Card, EmptyState, ErrorState, Field, FormError, Input, Loading, Modal, Table, Td, Th } from "./ui";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -45,7 +46,7 @@ export function InventoryTable({
   }
 
   return (
-    <Card title={heading} flush className={className}>
+    <Card title={heading} subtitle="Current stock by warehouse and commodity" icon={Boxes} flush className={className}>
       {actionError && (
         <div className="p-4 pb-0">
           <ErrorState message={actionError} />
@@ -60,7 +61,7 @@ export function InventoryTable({
           <ErrorState message={error} />
         </div>
       ) : !items?.length ? (
-        <EmptyState title="No inventory records" body="Nothing matches in your scope." action={emptyAction} />
+        <EmptyState art icon={PackageSearch} title="No inventory records" body="Nothing matches these filters within your location scope." action={emptyAction} />
       ) : (
         <Table>
           <thead>
@@ -92,12 +93,12 @@ export function InventoryTable({
                   <Td right>
                     <div className="flex justify-end gap-1">
                       {canUpdate && (
-                        <Button size="sm" variant="ghost" onClick={() => setAdjusting(i)}>
+                        <Button size="sm" variant="ghost" icon={SlidersHorizontal} onClick={() => setAdjusting(i)}>
                           Adjust
                         </Button>
                       )}
                       {canDelete && (
-                        <Button size="sm" variant="ghost" className="hover:text-bad" onClick={() => remove(i)}>
+                        <Button size="sm" variant="ghost" icon={Trash2} className="hover:text-bad" onClick={() => remove(i)}>
                           Remove
                         </Button>
                       )}

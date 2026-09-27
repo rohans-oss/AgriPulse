@@ -1,5 +1,6 @@
 "use client";
 
+import { Users as UsersIcon, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import {
   Badge,
@@ -44,6 +45,8 @@ export default function UsersPage() {
   return (
     <div>
       <PageHeader
+        icon={UsersIcon}
+        eyebrow="Administration"
         title="Users"
         description="Everyone in your organization, their role and the locations they can access."
         actions={manage && <Button onClick={() => setEditing("new")}>Add user</Button>}
@@ -58,7 +61,7 @@ export default function UsersPage() {
             <ErrorState message={users.error.message} onRetry={users.reload} />
           </div>
         ) : !users.data?.length ? (
-          <EmptyState title="No users" />
+          <EmptyState icon={UsersIcon} title="No users" />
         ) : (
           <Table>
             <thead>
@@ -102,7 +105,7 @@ export default function UsersPage() {
       </Card>
 
       {roles.data && (
-        <Card title="Roles and permissions" className="mt-6" flush>
+        <Card title="Roles and permissions" subtitle="What each role can do — enforced by the API" icon={ShieldCheck} className="mt-6" flush>
           <Table>
             <thead>
               <tr>

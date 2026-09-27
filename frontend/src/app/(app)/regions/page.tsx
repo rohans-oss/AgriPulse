@@ -1,5 +1,6 @@
 "use client";
 
+import { MapPin as MapPinIcon } from "lucide-react";
 import { useState } from "react";
 import {
   Badge,
@@ -46,6 +47,8 @@ export default function RegionsPage() {
   return (
     <div>
       <PageHeader
+        icon={MapPinIcon}
+        eyebrow="Operations"
         title="Regions"
         description="Operating regions for this organization. Warehouses belong to a region."
         actions={manage && <Button onClick={() => setEditing("new")}>Add region</Button>}
@@ -66,6 +69,8 @@ export default function RegionsPage() {
           </div>
         ) : !data?.length ? (
           <EmptyState
+            art
+            icon={MapPinIcon}
             title="No regions yet"
             body={manage ? "Add the districts or cities you operate in." : "Your admin has not added regions yet."}
             action={manage && <Button onClick={() => setEditing("new")}>Add region</Button>}

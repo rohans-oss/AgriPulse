@@ -1,5 +1,7 @@
 "use client";
 
+import { CloudSun, Gauge, Warehouse as WarehouseIcon } from "lucide-react";
+import { WeatherHistoryPanels } from "@/components/weather";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -56,6 +58,8 @@ export default function WarehouseDetailPage() {
         ← Warehouses
       </Link>
       <PageHeader
+        icon={WarehouseIcon}
+        eyebrow="Warehouse"
         title={w.name}
         description={
           <>
@@ -89,7 +93,7 @@ export default function WarehouseDetailPage() {
         <StatTile label="Commodities" value={String(inv.data?.length ?? "—")} />
       </div>
 
-      <Card className="mt-6" title="Capacity used">
+      <Card className="mt-6" title="Capacity used" subtitle="Stock against capacity, converted to tonnes" icon={Gauge}>
         <CapacityBar pct={w.utilization_pct} />
         <dl className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
           <div>
@@ -122,6 +126,15 @@ export default function WarehouseDetailPage() {
           />
           {moves.data && <RecentMovements rows={moves.data} heading="Movement history" />}
         </>
+      )}
+
+      {can("data.read") && w.latitude != null && w.longitude != null && (
+        <section className="mt-6 space-y-3">
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+            <CloudSun className="h-4 w-4 text-brand" /> Weather at this warehouse
+          </h2>
+          <WeatherHistoryPanels warehouseId={w.id} />
+        </section>
       )}
 
       {can("warehouse.manage") && (

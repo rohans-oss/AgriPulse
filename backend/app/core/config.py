@@ -23,6 +23,17 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # --- V2 external data -------------------------------------------------
+    # Free key from https://data.gov.in (My Account → API key). Without it the
+    # mandi price source reports "Not configured" and is never faked.
+    data_gov_in_api_key: str = ""
+    ogd_api_base: str = "https://api.data.gov.in/resource"
+    ogd_mandi_resource_id: str = "9ef84268-d588-465a-a308-a864a43d0070"
+    mandi_states: list[str] = ["Karnataka"]
+    open_meteo_base: str = "https://api.open-meteo.com/v1/forecast"
+    http_timeout_seconds: float = 20.0
+    max_upload_bytes: int = 5_000_000
+
 
 @lru_cache
 def get_settings() -> Settings:

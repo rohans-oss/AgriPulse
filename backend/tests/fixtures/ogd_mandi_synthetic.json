@@ -1,0 +1,31 @@
+{
+  "_fixture_note": "SYNTHETIC TEST FIXTURE shaped like the data.gov.in (OGD) API response for resource 9ef84268-d588-465a-a308-a864a43d0070. Prices are invented for parser/validation tests only and are never loaded into the app.",
+  "index_name": "9ef84268-d588-465a-a308-a864a43d0070",
+  "title": "Current Daily Price of Various Commodities from Various Markets (Mandi)",
+  "field": [
+    {"id": "state", "name": "State", "type": "keyword"},
+    {"id": "district", "name": "District", "type": "keyword"},
+    {"id": "market", "name": "Market", "type": "keyword"},
+    {"id": "commodity", "name": "Commodity", "type": "keyword"},
+    {"id": "variety", "name": "Variety", "type": "keyword"},
+    {"id": "grade", "name": "Grade", "type": "keyword"},
+    {"id": "arrival_date", "name": "Arrival_Date", "type": "date"},
+    {"id": "min_price", "name": "Min_Price", "type": "double"},
+    {"id": "max_price", "name": "Max_Price", "type": "double"},
+    {"id": "modal_price", "name": "Modal_Price", "type": "double"}
+  ],
+  "total": 8,
+  "count": 8,
+  "limit": "1000",
+  "offset": "0",
+  "records": [
+    {"state": "Karnataka", "district": "Bangalore", "market": "Test Market A", "commodity": "Tomato", "variety": "Local", "grade": "FAQ", "arrival_date": "26/09/2026", "min_price": "1000", "max_price": "1600", "modal_price": "1300"},
+    {"state": "Karnataka", "district": "Kolar", "market": "Test Market B", "commodity": "Tomato", "variety": "Hybrid", "grade": "FAQ", "arrival_date": "26/09/2026", "min_price": "1200", "max_price": "1800", "modal_price": "1500"},
+    {"State": "Karnataka", "District": "Mysore", "Market": "Test Market C", "Commodity": "Onion", "Variety": "Local", "Grade": "FAQ", "Arrival_Date": "26/09/2026", "Min_x0020_Price": "2000", "Max_x0020_Price": "2600", "Modal_x0020_Price": "2300"},
+    {"state": "Tamil Nadu", "district": "Hosur", "market": "Out Of State Market", "commodity": "Tomato", "variety": "Local", "grade": "FAQ", "arrival_date": "26/09/2026", "min_price": "900", "max_price": "1400", "modal_price": "1100"},
+    {"state": "Karnataka", "district": "Bangalore", "market": "Test Market A", "commodity": "Potato", "variety": "Local", "grade": "FAQ", "arrival_date": "26/09/2026", "min_price": "3000", "max_price": "2000", "modal_price": "2500"},
+    {"state": "Karnataka", "district": "Bangalore", "market": "Test Market A", "commodity": "Rice", "variety": "Sona", "grade": "FAQ", "arrival_date": "26/09/2026", "min_price": "3000", "max_price": "3400", "modal_price": ""},
+    {"state": "Karnataka", "district": "Bangalore", "market": "Test Market D", "commodity": "Onion", "variety": "Local", "grade": "FAQ", "arrival_date": "31/02/2026", "min_price": "2000", "max_price": "2500", "modal_price": "2200"},
+    {"state": "Karnataka", "district": "Kolar", "market": "Test Market B", "commodity": "Onion", "variety": "Local", "grade": "FAQ", "arrival_date": "26/09/2026", "min_price": "2000", "max_price": "2400", "modal_price": "2600"}
+  ]
+}
